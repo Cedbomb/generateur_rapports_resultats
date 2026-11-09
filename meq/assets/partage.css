@@ -1,0 +1,51 @@
+
+/* Rappel de la cible sous le titre de chaque section PEVR : la métrique
+   y est figée (une cible ne chiffre qu'un indicateur), il n'y a donc pas
+   de menu « Métrique » pour la nommer. */
+.panel-lede {
+    margin: 0 0 0.9rem;
+    font-size: 0.86rem;
+    color: #52514e;
+}
+
+/* Les deux sous-graphiques du classement (primaire / secondaire), CÔTE À
+   CÔTE : ils partagent une seule section, un seul menu Année, une seule
+   légende et une seule échelle verticale, mais chacun garde son axe
+   horizontal — un primaire et un secondaire n'ont ni les mêmes écoles ni les
+   mêmes objectifs, et les ranger sur un axe commun ferait un classement
+   d'écoles qui ne se comparent pas.
+
+   Colonnes 5fr/2fr, à l'image du nombre d'écoles de chaque ordre (une
+   quinzaine contre six) : à parts égales, le secondaire étalerait six barres
+   sur la moitié de la largeur.
+
+   `min-width: 0` sur les colonnes : sans lui, une grille refuse de descendre
+   sous la largeur intrinsèque de son contenu, et le canevas uPlot — dimensionné
+   en pixels — empêcherait la colonne de rétrécir. */
+.subplot-row {
+    display: grid;
+    grid-template-columns: 5fr 2fr;
+    gap: 1.4rem;
+    align-items: start;
+}
+.subplot { min-width: 0; }
+.subplot-title {
+    margin: 0.2rem 0 0.3rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #0b0b0b;
+}
+/* Sous 1100 px, deux colonnes ne laissent plus la place aux noms d'écoles
+   inclinés : les sous-graphiques repassent l'un sous l'autre. */
+@media (max-width: 1100px) {
+    .subplot-row { grid-template-columns: 1fr; }
+}
+
+/* Objectifs 1 et 2 (français/mathématique, voir PEVR_VIEWS) : contrairement
+   au classement, la comparaison primaire/secondaire n'y est pas visuelle
+   (chaque sous-graphique garde sa propre échelle verticale) — rien ne
+   justifie la largeur asymétrique 5fr/2fr taillée pour le nombre d'écoles du
+   classement. Secondaire s'empile donc sous primaire, à la même largeur. */
+.subplot-row.stack {
+    grid-template-columns: 1fr;
+}

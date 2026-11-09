@@ -1,0 +1,103 @@
+
+.export-anchor { position: relative; }
+.export-png-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 35;
+    padding: 0.16rem 0.42rem;
+    font-size: 0.72rem;
+    font-family: inherit;
+    line-height: 1.3;
+    color: #52514e;
+    background: rgba(255, 255, 255, 0.86);
+    border: 1px solid #d0d0d0;
+    border-radius: 5px;
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 0.12s ease, background 0.12s ease;
+}
+/* Discret par défaut pour ne pas concurrencer le tracé, franc dès que la
+   souris entre dans le graphique — ou dès qu'il prend le focus clavier. */
+.export-anchor:hover .export-png-btn,
+.export-png-btn:focus-visible { opacity: 1; }
+.export-png-btn:hover { background: #ffffff; border-color: #a8a8a8; color: #0b0b0b; }
+.export-png-btn[disabled] { cursor: default; opacity: 0.75; }
+/* Le titre au fil des filtres occupe le haut du conteneur, là même où se
+   pose le bouton : lui réserver la place plutôt que le laisser courir
+   dessous. Sans effet dans les rapports qui n'ont pas de tel titre. */
+.export-anchor > .chart-live-title { padding-right: 3.4rem; }
+
+/* Export PowerPoint : un seul bouton flottant pour la page, qui ouvre la
+   boîte de choix des graphiques. */
+.export-pptx-btn {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 50;
+    padding: 0.45rem 0.8rem;
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #ffffff;
+    background: #1f2937;
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+}
+.export-pptx-btn:hover { background: #0b0b0b; }
+.export-pptx-btn[disabled] { opacity: 0.75; cursor: default; }
+.export-pptx-dialog {
+    width: min(640px, calc(100vw - 32px));
+    max-height: calc(100vh - 64px);
+    padding: 1.1rem 1.25rem;
+    font-family: inherit;
+    color: #0b0b0b;
+    border: 1px solid #d0d0d0;
+    border-radius: 10px;
+}
+.export-pptx-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+.export-pptx-dialog h2 { margin: 0 0 0.3rem; font-size: 1.1rem; }
+.export-pptx-aide { margin: 0 0 0.8rem; font-size: 0.85rem; color: #52514e; }
+.export-pptx-liste {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    max-height: 55vh;
+    overflow-y: auto;
+    padding: 0.4rem;
+    border: 1px solid #e5e5e5;
+    border-radius: 6px;
+}
+.export-pptx-ligne {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+    padding: 0.3rem 0.35rem;
+    font-size: 0.85rem;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.export-pptx-ligne:hover { background: #f5f5f5; }
+.export-pptx-ligne.inactif { color: #898781; cursor: default; }
+.export-pptx-pied {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 0.9rem;
+}
+.export-pptx-etat { flex: 1; font-size: 0.8rem; color: #52514e; }
+.export-pptx-pied button {
+    padding: 0.3rem 0.7rem;
+    font-family: inherit;
+    font-size: 0.85rem;
+    background: #ffffff;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.export-pptx-pied button.principal { color: #ffffff; background: #1f2937; border-color: #1f2937; }
+.export-pptx-pied button[disabled] { opacity: 0.55; cursor: default; }
+@media print { .export-pptx-btn { display: none; } }

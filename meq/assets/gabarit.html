@@ -1,0 +1,1925 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITRE__</title>
+<style>
+__CSS_TEXT__
+__EXPORT_CSS__
+</style>
+<style>
+/* ---------------------------------------------------------------------
+   CSS propre à ce rapport. Volontairement ICI et non dans styles.css :
+   styles.css est embarqué dans rapport_assets.py par
+   generate_rapport_assets.py, donc l'y toucher imposerait de régénérer
+   les assets avant chaque build de l'exe. Ce bloc-ci voyage avec le
+   module, et preview_rapport.py comme l'exe voient exactement la même
+   chose.
+   --------------------------------------------------------------------- */
+__CSS_PARTAGE__
+
+/* Le bandeau de filtres reste visible au défilement — utile ici, où la page
+   est longue (jusqu'à neuf colonnes sur le premier tableau, plusieurs
+   sections empilées) et où changer d'école ou d'année sans remonter en haut
+   compte. `top: 0` colle le bandeau au bord de la fenêtre dès qu'il
+   atteindrait ce bord en défilant normalement ; le fond opaque hérité de
+   .global-filters-sticky masque le contenu qui passe dessous. */
+#meq-filters-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+
+.meq-avert {
+    margin: .6rem 0 0;
+    padding: .5rem .8rem;
+    background: #fffbe6;
+    border-left: 4px solid #d69e2e;
+    border-radius: 3px;
+    font-size: .88rem;
+    color: #5a4708;
+}
+
+/* Tableaux : codage couleur des en-têtes par nature de colonne, repris de
+   l'ancien projet (show_combined_stats_table). La couleur dit d'où vient
+   le chiffre — note d'école, épreuve, note modérée, autre compétence. */
+.data-table th.col-ind  { background: #4a5568; }
+.data-table th.col-c2   { background: #276749; }
+.data-table th.col-meq  { background: #2b6cb0; }
+.data-table th.col-mod  { background: #975a16; }
+.data-table th.col-c1   { background: #2c7a7b; }
+.data-table th.col-somm { background: #6b46c1; }
+.data-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Statistiques par groupe : chaque mesure a son PROPRE effectif (voir
+   celMesure()) — remplace l'ancien italique de ligne entière (petit-groupe),
+   qui se fiait au seul effectif du résultat final pour toutes les colonnes. */
+.data-table td.petit-n { font-style: italic; }
+.data-table tr.ligne-objectif td { border-top: 2px solid #cbd5e0; }
+.data-table .cible { color: #718096; font-size: .82rem; }
+.data-table .atteint { color: #276749; font-weight: 600; }
+.data-table .manque  { color: #9b2c2c; font-weight: 600; }
+
+/* Ligne verticale à la frontière de chaque groupe de colonnes (une
+   compétence, ou Sommaire) — posée sur le th ET le td de la même position
+   dans chaque ligne, du haut du tableau jusqu'en bas, pour que « Statistiques
+   combinées » se lise comme des blocs plutôt que comme une grille uniforme.
+   Un gris moyen plutôt que la couleur de fond du groupe : il doit rester
+   visible aussi bien sur les en-têtes foncés que sur les lignes claires. */
+.data-table th.grp-sep, .data-table td.grp-sep { border-left: 2px solid #718096; }
+
+/* Nuage note école × note MEQ, un point par élève, et les quatre quadrants
+   affichés à côté. */
+.densite-wrap { display: flex; gap: 1.2rem; flex-wrap: wrap; align-items: flex-start; }
+.quadrants { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; min-width: 260px; }
+.quadrant { padding: .55rem .7rem; border-radius: 4px; border-left: 5px solid; }
+.quadrant .q-nom { font-size: .8rem; color: #4a5568; }
+.quadrant .q-val { font-size: 1.15rem; font-weight: 600; }
+.q-vert   { background: #f0fff4; border-color: #38a169; }
+.q-rouge  { background: #fff5f5; border-color: #e53e3e; }
+.q-jaune  { background: #fffff0; border-color: #d69e2e; }
+.q-orange { background: #fffaf0; border-color: #dd6b20; }
+
+/* Nuage par élève. Le survol épaissit le point sous le curseur — c'est le
+   seul retour visuel qui dise QUEL point l'infobulle décrit quand plusieurs
+   se touchent. */
+.nuage-pt { cursor: pointer; }
+.nuage-pt:hover { stroke: #1a365d; stroke-width: 2; }
+
+/* Infobulle : un seul nœud réutilisé, positionné en `fixed` d'après le
+   curseur. Un <title> SVG (comme sur le nuage de modération, qui n'a qu'une
+   vingtaine de points) attendrait une seconde avant de paraître et ne
+   supporterait pas la mise en forme — inutilisable pour parcourir un nuage
+   de plusieurs centaines d'élèves. */
+.meq-tip {
+    position: fixed; z-index: 60; pointer-events: none; display: none;
+    background: #fff; color: #2d3748; font-size: .82rem; line-height: 1.35;
+    padding: .4rem .6rem; border-radius: 4px; max-width: 260px;
+    border: 1px solid #cbd5e0; box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
+.meq-tip .tip-nom { font-weight: 600; display: block; margin-bottom: .15rem; color: #1a365d; }
+.meq-tip .tip-ecart { color: #718096; }
+
+.meq-svg { max-width: 100%; height: auto; display: block; }
+.meq-svg .axe { stroke: #a0aec0; stroke-width: 1; }
+.meq-svg .grille { stroke: #edf2f7; stroke-width: 1; }
+.meq-svg .diag { stroke: #718096; stroke-width: 1.5; stroke-dasharray: 5 4; }
+.meq-svg .seuil { stroke: #e53e3e; stroke-width: 1; stroke-dasharray: 3 3; }
+.meq-svg .regress { stroke: #2b6cb0; stroke-width: 2; }
+.meq-svg text { font-size: 11px; fill: #4a5568; }
+.meq-svg .pt-label { font-size: 10px; fill: #2d3748; }
+
+.legende { display: flex; flex-wrap: wrap; gap: .35rem .9rem; margin-top: .7rem; font-size: .85rem; }
+.legende span { display: inline-flex; align-items: center; gap: .35rem; }
+.legende i { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+
+.section-vide { color: #718096; font-style: italic; padding: .6rem 0; }
+
+/* Fichiers d'export_meq.py (classe posée par initExport()) : textes
+   d'explication retirés, à la demande — le destinataire lit le rapport, il
+   n'a pas besoin du mode d'emploi de chaque tableau. */
+.meq-export #sec-stats .panel-lede,
+.meq-export #sec-groupes .panel-lede,
+.meq-export .legende-texte-nuage { display: none; }
+
+/* Police et remplissage réduits : 17 colonnes chiffrées, aussi étroites que
+   possible plutôt que lisibles en confort — voir aussi celsMesureTrio() qui
+   retire le symbole % des cases pour la même raison. Baisse la hauteur de
+   ligne réelle, d'où le recalcul du max-height ci-dessous (15 lignes visées,
+   pas 2,1rem/ligne comme dans les autres tables du rapport). */
+#groupes-box .data-table { font-size: 10px; }
+#groupes-box .data-table th,
+#groupes-box .data-table td { padding: .15rem .3rem; }
+
+/* Limiter la table des groupes à 15 lignes max avec défilement */
+#groupes-box .data-table tbody {
+    display: block;
+    max-height: calc(15 * 1.3rem);
+    overflow-y: auto;
+}
+#groupes-box .data-table thead {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+}
+#groupes-box .data-table tbody tr {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+}
+/* 17 colonnes (4 sources de note × moyenne/≥60/≥74, plus identité et
+   modération) ne tiennent plus dans la largeur du panneau : défilement
+   horizontal plutôt que des colonnes trop étroites pour se lire. min-width
+   (et non width) sur .data-table, pour que thead et chaque tbody tr — qui
+   valent chacun 100% de CE MÊME parent, voir le commentaire ci-dessus —
+   restent alignés colonne par colonne à n'importe quelle largeur d'écran.
+   Valeur réduite au minimum tenable avec la police et le remplissage
+   ci-dessus (colonnes numériques à 2-3 chiffres, sans %). */
+#groupes-box { overflow-x: auto; }
+#groupes-box .data-table { min-width: 50rem; }
+
+/* --- Carte de chaleur par question ---------------------------------------
+   Une <table> et non du SVG, contrairement aux deux nuages : la grille EST
+   déjà une table (lignes = groupes, colonnes = questions), et le HTML natif
+   donne gratuitement l'en-tête collant, la sélection du texte et le survol.
+   La couleur porte le taux de réussite, la valeur reste écrite en clair —
+   une carte de chaleur dont il faut deviner les chiffres n'est pas lisible
+   pour qui distingue mal les teintes. */
+#questions-box { overflow-x: auto; }
+#questions-box .data-table { min-width: max-content; }
+#questions-box .data-table td.q-cell {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    padding: .3rem .45rem;
+}
+/* L'effectif, sous le pourcentage : nettement plus discret, parce qu'il sert
+   à jauger la fiabilité de la case, pas à être lu case par case. */
+#questions-box .q-n { display: block; font-size: .72rem; color: #4a5568; opacity: .85; }
+#questions-box td.q-mince .q-pct { font-style: italic; }
+/* Case dont l'écart au __NOM_CSS__ passe le test de permutation. Le fond reste celui
+   du taux — le marqueur AJOUTE une information, il n'en remplace aucune —, et
+   il est porté par un contour et une flèche plutôt que par une couleur : la
+   couleur est déjà prise, et une flèche se lit aussi à l'impression noir et
+   blanc du rapport. */
+#questions-box td.q-signif { box-shadow: inset 0 0 0 2px #2d3748; }
+#questions-box .q-sig { font-size: .68rem; margin-left: .18rem; vertical-align: .12em; }
+#questions-box .data-table th.q-num { min-width: 3.2rem; text-align: center; }
+/* Colonne d'identité figée à gauche : sans elle, faire défiler jusqu'à la
+   question 25 fait perdre de vue DE QUEL groupe on lit la ligne. */
+#questions-box .data-table td.q-tete, #questions-box .data-table th.q-tete {
+    position: sticky; left: 0; z-index: 2; background: #fff;
+}
+#questions-box .data-table th.q-tete { background: #4a5568; }
+#questions-box .data-table tr.ligne-objectif td.q-tete { background: #f7fafc; }
+
+/* Colonnes triables dans la table des groupes */
+#groupes-box .data-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+#groupes-box .data-table th.sortable::after {
+    content: "↕";
+    margin-left: 0.4em;
+    opacity: 0.4;
+    font-size: 0.8em;
+}
+#groupes-box .data-table th.sortable.asc::after {
+    content: "↑";
+    opacity: 1;
+}
+#groupes-box .data-table th.sortable.desc::after {
+    content: "↓";
+    opacity: 1;
+}
+</style>
+</head>
+<body>
+<script>document.documentElement.classList.add("js-enabled");</script>
+<main class="app-shell">
+    <header class="page-header">
+        <h1>__TITRE__</h1>
+    </header>
+
+    <div class="global-filters-sticky" id="meq-filters-sticky">
+        <div class="global-filters-menu">
+            <div class="global-filter-item">
+                <label for="f-matiere">Matière</label>
+                <select id="f-matiere" class="global-filter-select"></select>
+            </div>
+            <div class="global-filter-item">
+                <label for="f-annee">Année</label>
+                <select id="f-annee" class="global-filter-select"></select>
+            </div>
+            <div class="global-filter-item">
+                <label for="f-vue">Niveau de vue</label>
+                <select id="f-vue" class="global-filter-select">
+                    <option value="cssl">__NOM_CSS__</option>
+                    <option value="ecole">Une école</option>
+                    <option value="groupe">Par groupe</option>
+                    <option value="enseignant">Par enseignant</option>
+                </select>
+            </div>
+            <div class="global-filter-item" id="item-ecole">
+                <label for="f-ecole">École</label>
+                <select id="f-ecole" class="global-filter-select"></select>
+            </div>
+            <div class="global-filter-item" id="item-groupe">
+                <label for="f-groupe">Groupe</label>
+                <select id="f-groupe" class="global-filter-select"></select>
+            </div>
+            <div class="global-filter-item" id="item-enseignant">
+                <label for="f-enseignant">Enseignant</label>
+                <select id="f-enseignant" class="global-filter-select"></select>
+            </div>
+            <div class="global-filter-item filter-checkbox-item"__STYLE_GROUPES_EXCLUS__>
+                <input type="checkbox" id="toggle-groupe-85">
+                <span>Inclure les groupes exclus (__GROUPES_EXCLUS__)</span>
+            </div>
+        </div>
+    </div>
+
+    <details class="panel" id="sec-stats" open>
+        <summary>Statistiques combinées</summary>
+        <div class="panel-body">
+            <p class="panel-lede">Moyenne et dispersion, une colonne par compétence de la matière : résultat final partout, et note d'école / examen / note école modérée / modération en plus pour la ou les compétences qui portent l'épreuve.</p>
+            <label class="filter-checkbox-item" style="display:inline-flex;gap:.4rem;align-items:center;margin-bottom:.75rem">
+                <input type="checkbox" id="toggle-absents">
+                <span>Retirer les absents à l'épreuve (de toutes les colonnes et de tout le rapport)</span>
+            </label>
+            <div id="stats-box"></div>
+        </div>
+    </details>
+
+    <details class="panel" id="sec-groupes" open>
+        <summary>Statistiques par groupe</summary>
+        <div class="panel-body">
+            <p class="panel-lede">Une ligne par groupe, sur la ou les compétences porteuses de l'épreuve (deux sections pour l'anglais, qui en a deux). Moyenne, % ≥ 60 et % ≥ 74 pour chacune des quatre sources de note (note d'école, examen, note école modérée, résultat final), plus la modération moyenne. <span id="lede-repere">La ligne de repère porte l'ensemble de l'école, ou l'école <em>sans</em> la sélection dès qu'un groupe ou un enseignant précis est choisi.</span> Ces mesures n'ont pas le même effectif : chaque case porte son propre n en infobulle (survol), et s'italique sous 10 élèves. Tableau large : défilement horizontal.</p>
+            <div id="groupes-box"></div>
+        </div>
+    </details>
+
+    <details class="panel" id="sec-nuage" open>
+        <summary>Note de l'école et note du ministère</summary>
+        <div class="panel-body">
+            <p class="panel-lede">Note d'école (horizontale) et note à l'épreuve (verticale) des élèves ayant les deux. Les quatre quadrants séparent réussite et échec de part et d'autre du seuil de 60&nbsp;%. La diagonale marque l'égalité des deux notes&nbsp;: au-dessus, l'épreuve est plus généreuse que l'école&nbsp;; en dessous, l'inverse.</p>
+            <div class="chart-wrap">
+                <div id="nuage-box"></div>
+            </div>
+        </div>
+    </details>
+
+    <details class="panel" id="sec-moder">
+        <summary>Effet de la modération</summary>
+        <div class="panel-body">
+            <p class="panel-lede">Un point par élève, un groupe à la fois&nbsp;: sa note d'école (horizontale) et l'écart que la modération lui a appliqué (verticale). Choisissez la vue « Par groupe », une école et un groupe précis ci-dessus pour l'afficher. La droite est la régression sur les élèves du groupe ayant la note d'école, la note modérée et l'épreuve.</p>
+            <div class="chart-wrap">
+                <div id="moder-box"></div>
+            </div>
+        </div>
+    </details>
+
+    <details class="panel" id="sec-questions">
+        <summary>Analyse par question</summary>
+        <div class="panel-body">
+            <p class="panel-lede">Taux de réussite question par question, une ligne par groupe et une colonne par question, en sections séparées selon le type de question. Le taux est le score moyen rapporté au barème de la question&nbsp;: une question notée sur 4 où les élèves obtiennent 3 en moyenne se lit 75&nbsp;%. Les cases marquées ▲/▼ sont celles dont l'écart au __NOM_CSS__ résiste à un test de permutation&nbsp;— voir les notes méthodologiques.</p>
+            <div id="questions-box"></div>
+        </div>
+    </details>
+
+    <details class="panel" id="sec-transfo">
+        <summary>Transformation par modération</summary>
+        <div class="panel-body">
+            <p class="panel-lede">La modération recentre les notes de l'école sur la moyenne et la dispersion de l'épreuve ministérielle&nbsp;:
+               <code>note modérée = moyenne épreuve + (écart-type épreuve / écart-type école) × (note brute − moyenne école)</code>.
+               Les moyennes et écarts-types se calculent au sein de chaque groupe, sur les seuls élèves ayant la note d'école <em>et</em> l'épreuve&nbsp;; quand plusieurs groupes sont affichés, la transformation de chaque groupe est moyennée.
+               La colonne inverse répond à la question pratique&nbsp;: quelle note brute faut-il pour atteindre tel résultat après modération&nbsp;?</p>
+            <div id="transfo-box"></div>
+        </div>
+    </details>
+
+    <details class="panel" id="sec-notes">
+        <summary>Notes méthodologiques</summary>
+        <div class="panel-body">
+            <ul class="notes-list">
+                <li>Source&nbsp;: rapports Charlemagne du ministère, agrégés au grain école × année scolaire × cours × groupe.</li>
+                <li><strong>L'année est l'année SCOLAIRE</strong>, désignée par le millésime de son mois de septembre&nbsp;: l'épreuve de juin 2026 appartient à l'année 2025. L'ancien projet Analyses_MEQ nommait cette même passation « 2025 » d'après l'année civile — un rapport « 2025 » de l'ancien projet correspond donc à l'année <strong>2024</strong> ici.</li>
+                <li>Seule la passation de <strong>mai-juin</strong> est retenue&nbsp;: les reprises d'août et l'école des cours d'été mélangeraient première passation et reprise après échec.</li>
+                <li>Les résultats obtenus hors __NOM_CSS__ (autre centre de services, école privée, formation aux adultes) sont écartés&nbsp;: ils figurent au relevé de l'élève mais ne sont pas des résultats de la commission.</li>
+                <li><strong>Quatre sources de note</strong>, à ne pas confondre&nbsp;: <em>note de l'école</em> (NOTE_ECOLE_BRUT, l'évaluation maison avant modération)&nbsp;; <em>épreuve MEQ</em> (NOTE_MINST_CONVR, l'épreuve seule)&nbsp;; <em>note modérée</em> (NOTE_ECOLE_MODR, la note d'école après modération)&nbsp;; <em>résultat final</em> (RESLT_FINAL, ce qui paraît au relevé, combinant les deux).</li>
+                <li><strong>La colonne « Sommaire » et les colonnes de compétence ne comptent pas les mêmes élèves</strong>, et aucune n'est fausse. Le ministère publie une ligne par code&nbsp;: le cours (063414 pour le CST) et chaque compétence (063410 Résoudre, 063420 Utiliser) sont des enregistrements distincts, et tous les élèves ne portent pas les trois. En 2025-2026, le CST compte ainsi 469 élèves au sommaire, 466 sur Résoudre et 417 sur Utiliser. L'écart est déjà dans l'export du ministère&nbsp;— aucun filtre du rapport ne l'introduit. La colonne « Sommaire » est celle qui correspond à la barre du même cours sur la page PEVR du rapport CCG.</li>
+                <li>La note d'épreuve n'est pas portée par le code du cours mais par une <strong>compétence précise</strong> — Théorie en science, Utiliser en mathématique, Écrire en français. Seule l'histoire la porte sur le cours lui-même. Les sections « Statistiques par groupe », « Transformation » et « Nuage » utilisent automatiquement la ou les compétences porteuses de l'épreuve — deux pour l'anglais (Communiquer et Écrire), une seule pour les autres matières.</li>
+                <li><strong>Anglais&nbsp;: deux épreuves.</strong> L'interaction orale (Communiquer) et la production écrite (Écrire) portent chacune leur propre note d'épreuve pour le même élève. Elles restent deux compétences distinctes et ne sont jamais additionnées — les fusionner compterait chaque élève deux fois.</li>
+                <li id="note-vue-enseignant"><strong>Vue « enseignant »</strong>&nbsp;: le repère de comparaison est l'école <em>privée de cet enseignant</em>, pas l'école entière. Un enseignant ne se compare donc jamais à un ensemble qui l'inclut. Les enseignants sont désignés par leur prénom et l'initiale de leur nom.</li>
+                <li>Un groupe de moins de <strong>5 élèves</strong> est compté dans les agrégats mais ses statistiques propres ne sont pas affichées&nbsp;: à cet effectif, une moyenne de groupe s'approche d'une donnée individuelle.</li>
+                <li><strong>Note d'école, épreuve, note modérée et résultat final n'ont pas le même effectif</strong>, dans « Statistiques combinées » comme dans « Statistiques par groupe »&nbsp;: tous les élèves ne portent pas les quatre notes (un élève peut avoir une note d'école sans note d'épreuve, ou l'inverse). « Statistiques combinées » affiche donc une ligne Effectif propre à chaque colonne. « Statistiques par groupe », dont chaque ligne combine plusieurs mesures, ne peut pas répéter quatre colonnes d'effectif sans les tripler&nbsp;: chaque case y porte son propre n en infobulle (survol) et s'italique sous 10 élèves, plutôt que de se fier à la seule colonne « Effectif » (celle du résultat final) comme dénominateur commun.</li>
+                <li><strong>Deux sections sont nominatives&nbsp;; le reste du rapport ne l'est pas.</strong> Le nuage note-école / note-MEQ porte un point par élève, avec son nom, son groupe et ses deux notes au survol — comme l'ancien projet. Le graphique de modération l'est aussi depuis qu'il affiche un point par élève d'un groupe précis (nom et écart au survol), plutôt qu'un point par groupe agrégé. Toutes les autres sections restent agrégées. Ce rapport circule sur le partage réseau&nbsp;: à diffuser en connaissance de cause.</li>
+                <li>Les moyennes et écarts-types se recalculent à la volée depuis des statistiques suffisantes (effectif, somme, somme des carrés), et les seuils PEVR depuis un histogramme de la note BRUTE (non arrondie)&nbsp;: un élève à 59,6&nbsp;% compte sous 60&nbsp;%, contrairement au rapport CCG qui arrondit chaque élève avant de le classer.</li>
+                <li>L'écart-type est celui d'un <strong>échantillon</strong> (dénominateur n−1), comme dans le rapport CCG et dans l'ancien projet.</li>
+                <li>La <strong>modération</strong> ne porte que sur les élèves ayant <strong>à la fois</strong> une note d'école et une note d'épreuve&nbsp;: la colonne «&nbsp;Modération&nbsp;» (note modérée − note brute), le graphique «&nbsp;Effet de la modération&nbsp;» et la transformation n'incluent jamais un élève absent à l'épreuve, et ne changent donc pas avec la case «&nbsp;Retirer les absents&nbsp;». La transformation se calcule au sein de chaque groupe&nbsp;; sur plusieurs groupes, c'est la moyenne (non pondérée) des transformations des groupes.</li>
+                __NOTE_CIBLES__
+                <li>Carte de chaleur par question, marqueurs <strong>▲/▼</strong> — <em>test de permutation</em>. La question posée&nbsp;: le taux de réussite de cet <strong>enseignant</strong> à cette question s'écarte-t-il du taux du __NOM_CSS__ plus que le hasard du découpage des élèves en groupes ne l'expliquerait&nbsp;? On réattribue 10&nbsp;000 fois les élèves aux enseignants au hasard, à effectifs conservés, et l'on compte la fraction des tirages où l'écart au __NOM_CSS__ est au moins aussi grand que l'écart observé&nbsp;: c'est le <em>p</em>. Le tirage est déterministe — les chiffres ne bougent pas d'une ouverture à l'autre. Ce qui est permuté est le <strong>vecteur de réponses entier</strong> d'un élève, jamais une réponse isolée&nbsp;: un élève fort l'est sur toutes les questions à la fois, et permuter question par question resserrerait à tort la distribution nulle. Quatre réserves, toutes délibérées. <strong>1.</strong> Le test porte sur le taux <strong>brut</strong>, sans ajustement sur le niveau général de l'enseignant&nbsp;: un groupe globalement fort ressortira significatif sur beaucoup de questions à la fois, ce qui est une lecture de <em>niveau</em>, pas de <em>profil</em> — un ▲ ne désigne pas une question mieux enseignée que les autres. <strong>2.</strong> La comparaison se fait toujours au <strong>__NOM_CSS__ entier</strong> pour l'année et le cours<span class="note-reste">, y compris quand la ligne de repère affichée est « Reste de l'école »&nbsp;: la ligne du tableau et le marqueur ne répondent donc pas exactement à la même question</span>. <strong>3.</strong> Une épreuve pose une quinzaine de questions et le tableau aligne des dizaines d'enseignants&nbsp;: à 5&nbsp;% par case, une case sur vingt ressortirait sans que rien ne distingue personne. Le marqueur suit donc la <em>q-valeur</em> (correction FDR de Benjamini-Hochberg sur les questions d'un enseignant pour une épreuve), et non le <em>p</em> brut, qui reste lisible en infobulle. La colonne « Ensemble » résume des questions déjà testées&nbsp;: elle suit le <em>p</em>, sans correction. <strong>4.</strong> Une case de moins de 5 réponses n'est jamais marquée, et une case dont l'effectif ne correspond pas exactement à celui testé non plus — un filtre de groupe qui restreint la ligne d'un enseignant portant plusieurs groupes retire les marqueurs plutôt que d'en montrer d'empruntés. Précalculé par <code>le module de calcul</code> à la construction de la base&nbsp;: le test exige les réponses élève par élève, que le rapport n'embarque pas. Une base construite sans cette étape affiche la carte sans marqueurs.</li>
+                <li><strong>Absents à l'épreuve.</strong> Un élève absent a « ABS » comme résultat final sur la compétence qui porte l'épreuve&nbsp;: il n'a donc ni résultat final ni note d'examen dans cette colonne, mais sa note d'école et sa note modérée y sont comptées. Il reste aussi compté au Sommaire et sur les autres compétences, où le ministère lui attribue un résultat (l'absence y pèse comme un zéro sur la part de la compétence évaluée par l'épreuve). La case «&nbsp;Retirer les absents à l'épreuve&nbsp;» les retire de toutes les colonnes et de toutes les sections à la fois. Ils n'entrent jamais dans la modération (voir plus bas), cochée ou non. Un élève qui a une note d'épreuve sur une autre ligne du même cours n'est pas considéré absent.</li>
+                <li>Le groupe <strong>85</strong> est exclu (élèves sans groupe-cours assigné), comme dans l'ancien projet. Les codes Sommaire ne portent pas de numéro de groupe&nbsp;: ils ne sont donc lisibles qu'au niveau de l'école.</li>
+            </ul>
+        </div>
+    </details>
+
+    <footer class="page-footer">
+        <p class="footer-text">Généré le __GENERATED_AT__ — generateur_meq.py v__APP_VERSION__</p>
+    </footer>
+</main>
+
+<script>
+"use strict";
+
+/* Deux variantes (voir le module de calcul — exclure_groupe_85) :
+   *_SANS_G85 exclut le groupe 85 (élèves sans groupe-cours assigné),
+   *_AVEC_G85 le garde. CELLULES/CELLULES_QUESTIONS (plus bas) sont les
+   pointeurs MUTABLES que le reste du script lit — #toggle-groupe-85 les
+   réaffecte puis appelle rendre(). CELLULES_PERM (test de permutation) n'a
+   PAS de variante groupe 85 : voir le module de calcul, aggreger_permutations
+   — ce test coûte déjà des dizaines de secondes pour un seul passage. */
+const CELLULES_SANS_G85 = __CELLULES_JSON__;
+const CELLULES_AVEC_G85 = __CELLULES_G85_JSON__;
+let CELLULES = CELLULES_SANS_G85; // décoché par défaut (#toggle-groupe-85)
+const CELLULES_QUESTIONS_SANS_G85 = __CELLULES_QUESTIONS_JSON__;
+const CELLULES_QUESTIONS_AVEC_G85 = __CELLULES_QUESTIONS_G85_JSON__;
+let CELLULES_QUESTIONS = CELLULES_QUESTIONS_SANS_G85;
+const CHAMPS_QUESTIONS = __CHAMPS_QUESTIONS_JSON__;
+const CELLULES_PERM = __CELLULES_PERM_JSON__;
+const CHAMPS_PERM = __CHAMPS_PERM_JSON__;
+const ECOLES = __ECOLES_JSON__;
+const ANNEES = __ANNEES_JSON__;
+const MATIERES = __MATIERES_JSON__;
+const CHAMPS = __CHAMPS_JSON__;
+const SEUIL_PASSAGE = __SEUIL_PASSAGE_JSON__;
+const SEUIL_SANS_RISQUE = __SEUIL_SANS_RISQUE_JSON__;
+const OBJECTIFS_PASSAGE = __OBJECTIFS_PASSAGE_JSON__;
+const N_MIN = __N_MIN_JSON__;
+const SEUIL_SIGNIF = __SEUIL_SIGNIF_JSON__;
+const QUESTIONS_DISPONIBLES = __QUESTIONS_JSON__;
+/* null dans l'exe. Fichier d'export_meq.py : {type: "enseignant"|"ecole",
+   ecole, enseignant, titre} — fige les menus et masque des sections. Les
+   données des collègues et des autres écoles n'arrivent ici que FUSIONNÉES
+   en cellules anonymes (« reste de l'école », « autres écoles ») : masquer
+   ne protège rien, c'est export_meq.py qui a déjà retiré les noms. */
+const EXPORT = __EXPORT_MODE_JSON__;
+const EXPORT_ENS = EXPORT && EXPORT.type === "enseignant";
+const EXPORT_ECOLE = EXPORT && EXPORT.type === "ecole";
+
+/* Indices positionnels du payload. Figés : CHAMPS (Python) et C (ici)
+   décrivent la même liste, dans le même ordre. */
+const C = {};
+CHAMPS.forEach((nom, i) => { C[nom] = i; });
+
+/* Idem pour les cellules par question — liste distincte, indices distincts. */
+const CQ = {};
+CHAMPS_QUESTIONS.forEach((nom, i) => { CQ[nom] = i; });
+
+/* Idem pour les tests de permutation. */
+const CP = {};
+CHAMPS_PERM.forEach((nom, i) => { CP[nom] = i; });
+
+/* Tests de permutation, indexés une fois pour toutes : la carte de chaleur
+   interroge une case à la fois, et un filtre linéaire sur des dizaines de
+   milliers de lignes à chaque case redessinerait la section en secondes.
+   Clé : école, enseignant, année, cours, type, question (vide = « Ensemble »). */
+const PERM_PAR_CLE = new Map();
+for (const p of CELLULES_PERM) {
+    PERM_PAR_CLE.set([p[CP.ECO], p[CP.ENSEIGNANT_ID] || "", p[CP.ANNEE], p[CP.CD_COURS],
+                      p[CP.TYPE_QUEST], p[CP.NO_QUEST] == null ? "" : p[CP.NO_QUEST]].join("|"), p);
+}
+
+const $ = sel => document.querySelector(sel);
+const fmt = (v, d = 1) => (v == null || !isFinite(v)) ? "—" : v.toFixed(d).replace(".", ",");
+const pct = v => (v == null || !isFinite(v)) ? "—" : fmt(v, 1) + " %";
+const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* ---------------------------------------------------------------------
+   Statistiques suffisantes
+
+   Une « série » est {n, som, somcar, hist}. Elles s'ADDITIONNENT, ce qui
+   fait tenir les quatre niveaux de vue sans rien de précalculé — et rend
+   le repère « laisser-un-dehors » exact par soustraction.
+   --------------------------------------------------------------------- */
+
+function serieVide() { return { n: 0, som: 0, somcar: 0, hist: new Map() }; }
+
+/* Bascule #toggle-absents cochée : la part des absents à l'épreuve
+   (colonnes *_ABS, déjà comptée dans la série de la cellule) est retirée
+   ICI, au seul point par lequel passent toutes les séries du rapport —
+   tableaux et repères « laisser-un-dehors » compris. Les préfixes sans
+   colonne _ABS (MEQ, MODERATION : mesures qui exigent l'épreuve, qu'un
+   absent n'a pas) trouvent C[...] indéfini et ne retirent rien. */
+function ajouterSerie(acc, cel, prefixe) {
+    const n = cel[C["N_" + prefixe]] || 0;
+    if (!n) return acc;
+    const retirer = state.retirerAbsents && C["N_" + prefixe + "_ABS"] !== undefined;
+    const nAbs = retirer ? (cel[C["N_" + prefixe + "_ABS"]] || 0) : 0;
+    acc.n += n - nAbs;
+    acc.som += (cel[C["SOM_" + prefixe]] || 0)
+             - (nAbs ? cel[C["SOM_" + prefixe + "_ABS"]] || 0 : 0);
+    acc.somcar += (cel[C["SOMCAR_" + prefixe]] || 0)
+                - (nAbs ? cel[C["SOMCAR_" + prefixe + "_ABS"]] || 0 : 0);
+    const h = cel[C["HIST_" + prefixe]];
+    if (h) for (const [v, c] of h) acc.hist.set(v, (acc.hist.get(v) || 0) + c);
+    const hAbs = nAbs ? cel[C["HIST_" + prefixe + "_ABS"]] : null;
+    if (hAbs) for (const [v, c] of hAbs) {
+        const reste = (acc.hist.get(v) || 0) - c;
+        if (reste > 0) acc.hist.set(v, reste); else acc.hist.delete(v);
+    }
+    return acc;
+}
+
+function fusionner(cellules, prefixe) {
+    const acc = serieVide();
+    for (const cel of cellules) ajouterSerie(acc, cel, prefixe);
+    return acc;
+}
+
+/* Repère « laisser-un-dehors » : l'ensemble MOINS un sous-ensemble.
+   Exact, parce que n, som, somcar et l'histogramme sont additifs. */
+function soustraire(tout, part) {
+    const r = { n: tout.n - part.n, som: tout.som - part.som,
+                somcar: tout.somcar - part.somcar, hist: new Map(tout.hist) };
+    for (const [v, c] of part.hist) {
+        const reste = (r.hist.get(v) || 0) - c;
+        if (reste > 0) r.hist.set(v, reste); else r.hist.delete(v);
+    }
+    return r;
+}
+
+const moyenne = s => s.n ? s.som / s.n : null;
+
+/* Écart-type ÉCHANTILLON (n−1), comme aggregate_ccg.stdev_echantillon().
+   Le max(0, …) absorbe l'erreur d'arrondi flottante qui peut rendre la
+   variance très légèrement négative quand toutes les valeurs sont égales. */
+function ecartType(s) {
+    if (s.n < 2) return null;
+    const v = (s.somcar - s.som * s.som / s.n) / (s.n - 1);
+    return Math.sqrt(Math.max(0, v));
+}
+
+function partAuDessus(s, seuil) {
+    if (!s.n) return null;
+    let n = 0;
+    for (const [v, c] of s.hist) if (v >= seuil) n += c;
+    return n / s.n * 100;
+}
+
+/* ---------------------------------------------------------------------
+   État et sélection
+   --------------------------------------------------------------------- */
+
+const state = {
+    matiere: MATIERES[0].cle,
+    annee: ANNEES.length ? ANNEES[ANNEES.length - 1] : null,
+    vue: "cssl",
+    ecole: ECOLES.length ? ECOLES[0].id : null,
+    groupe: "",
+    enseignant: "",
+    retirerAbsents: false, // #toggle-absents, décoché par défaut
+};
+
+const matiereCourante = () => MATIERES.find(m => m.cle === state.matiere) || MATIERES[0];
+
+/* Toutes les compétences d'une matière — une colonne par compétence dans le
+   tableau « Statistiques combinées ». L'histoire n'a pas de code de
+   compétence propre (l'épreuve est portée par le cours) : le cours lui-même
+   tient lieu de colonne unique. */
+function competencesEffectives(m) {
+    return m.competences.length ? m.competences : [[m.parent, "Résultat du cours"]];
+}
+
+/* Les compétences porteuses d'une note d'épreuve (m.exam) : celles sur
+   lesquelles Statistiques par groupe / Transformation / Nuage / Modération
+   peuvent calculer quelque chose. Une seule pour la plupart des matières,
+   deux pour l'anglais (interaction orale et production écrite, jamais
+   fusionnées — voir MATIERES plus haut). */
+function competencesExamen(m) {
+    return m.exam.map(code => {
+        const trouve = m.competences.find(c => c[0] === code);
+        return [code, trouve ? trouve[1] : "Résultat du cours"];
+    });
+}
+
+/* Cellules de l'année et du cours courants, avant filtrage par école. */
+function cellulesCours(code) {
+    return CELLULES.filter(c => c[C.ANNEE] === state.annee && c[C.CD_COURS] === code);
+}
+
+function cellulesEcole(code, eco) {
+    return cellulesCours(code).filter(c => c[C.ECO] === eco);
+}
+
+/* Les cellules de la sélection courante, et le libellé de ce qu'elles
+   représentent. La vue « enseignant » ne retient que ses groupes ; la vue
+   « groupe », si un groupe précis est choisi, n'en retient que celui-là. */
+function selection(code) {
+    if (state.vue === "cssl") return cellulesCours(code);
+    const base = cellulesEcole(code, state.ecole);
+    if (state.vue === "enseignant" && state.enseignant) {
+        return base.filter(c => c[C.ENSEIGNANT_ID] === state.enseignant);
+    }
+    if (state.vue === "groupe" && state.groupe) {
+        return base.filter(c => (c[C.GROUPE] || "(sans groupe)") === state.groupe);
+    }
+    return base;
+}
+
+/* Le repère auquel comparer la sélection.
+   - vue enseignant : son école SANS lui (laisser-un-dehors) ;
+   - vue groupe, un groupe précis choisi : l'école SANS ce groupe (même principe) ;
+   - vue école/groupe (tous groupes) : l'ensemble du __NOM_CSS__ ;
+   - vue __NOM_CSS__ : aucun repère (elle EST le tout). */
+function reference(code, prefixe) {
+    /* Export enseignant : pas de « Reste de l'école » (demande explicite),
+       le seul repère est le __NOM_CSS__ — voir referenceCssl(). */
+    if (EXPORT_ENS) return null;
+    if (state.vue === "enseignant" && state.enseignant) {
+        const ecole = fusionner(cellulesEcole(code, state.ecole), prefixe);
+        const lui = fusionner(selection(code), prefixe);
+        return { serie: soustraire(ecole, lui), nom: "Reste de l'école" };
+    }
+    if (state.vue === "groupe" && state.groupe) {
+        const ecole = fusionner(cellulesEcole(code, state.ecole), prefixe);
+        const lui = fusionner(selection(code), prefixe);
+        return { serie: soustraire(ecole, lui), nom: "Reste de l'école" };
+    }
+    if (state.vue === "cssl") return null;
+    return { serie: fusionner(cellulesCours(code), prefixe), nom: "__NOM_CSS__" };
+}
+
+/* Export enseignant : le __NOM_CSS__, SEUL repère (reference() y rend null).
+   null ailleurs — reference() porte déjà le __NOM_CSS__ en vue école. */
+function referenceCssl(code, prefixe) {
+    if (!EXPORT_ENS) return null;
+    return { serie: fusionner(cellulesCours(code), prefixe), nom: "__NOM_CSS__" };
+}
+
+/* Noms courts imposés pour les 4 écoles secondaires, plutôt que le nom
+   NOM_ECO complet — même liste que SCHOOL_SHORT_CODES côté Python
+   (generateur_master.py), clé = champ ECO. */
+const NOMS_COURTS_ECOLES = __NOMS_COURTS_JSON__;
+const nomEcole = id => NOMS_COURTS_ECOLES[id]
+    || (ECOLES.find(e => String(e.id) === String(id)) || {}).nom
+    || ("École " + id);
+
+/* Convertir un nom en MAJUSCULES en casse mixte avec première lettre majuscule */
+const capitaliserNom = nom => {
+    if (!nom) return nom;
+    return nom
+        .toLowerCase()
+        .split(/(\s+|-)+/)
+        .map((part, i) => /^\s|-$/.test(part) ? part : part.charAt(0).toUpperCase() + part.slice(1))
+        .join("");
+};
+
+/* ---------------------------------------------------------------------
+   Contrôles
+   --------------------------------------------------------------------- */
+
+function remplirSelect(el, options, valeur) {
+    el.innerHTML = options.map(o =>
+        `<option value="${esc(o.v)}"${String(o.v) === String(valeur) ? " selected" : ""}>${esc(o.l)}</option>`
+    ).join("");
+}
+
+function majEnseignants() {
+    const m = matiereCourante();
+    const vus = new Map();
+    for (const [code] of competencesEffectives(m)) {
+        for (const c of cellulesEcole(code, state.ecole)) {
+            if (c[C.ENSEIGNANT_ID] && c[C.ENSEIGNANT]) vus.set(c[C.ENSEIGNANT_ID], c[C.ENSEIGNANT]);
+        }
+    }
+    const opts = [...vus.entries()]
+        .sort((a, b) => a[1].localeCompare(b[1], "fr"))
+        .map(([id, nom]) => ({ v: id, l: nom }));
+    if (!opts.length) opts.push({ v: "", l: "Aucun enseignant identifié" });
+    if (!opts.some(o => o.v === state.enseignant)) state.enseignant = opts[0].v;
+    remplirSelect($("#f-enseignant"), opts, state.enseignant);
+}
+
+/* Option « Tous les groupes » en tête, puis un groupe par valeur distincte
+   vue dans l'école courante — le même repli "(sans groupe)" que la
+   ventilation par groupe (sec-groupes) et le nuage de modération. */
+function majGroupes() {
+    const m = matiereCourante();
+    const vus = new Set();
+    for (const [code] of competencesEffectives(m)) {
+        for (const c of cellulesEcole(code, state.ecole)) {
+            /* Export enseignant : ses groupes seulement — la cellule « reste
+               de l'école » n'est pas un groupe à choisir. */
+            if (EXPORT_ENS && c[C.ENSEIGNANT_ID] !== EXPORT.enseignant) continue;
+            vus.add(c[C.GROUPE] || "(sans groupe)");
+        }
+    }
+    /* Pas de « Tous les groupes » en export enseignant : ce serait l'école
+       entière, que ce fichier ne montre pas (seul repère : le __NOM_CSS__). */
+    const opts = (EXPORT_ENS ? [] : [{ v: "", l: "Tous les groupes" }]).concat(
+        [...vus].sort((a, b) => String(a).localeCompare(String(b), "fr", { numeric: true }))
+            .map(g => ({ v: g, l: g }))
+    );
+    if (!opts.length) opts.push({ v: "", l: "Aucun groupe" });
+    if (!opts.some(o => o.v === state.groupe)) state.groupe = opts[0].v;
+    remplirSelect($("#f-groupe"), opts, state.groupe);
+}
+
+function majVisibiliteControles() {
+    /* Export : une seule école et au plus un enseignant, déjà dans le titre. */
+    $("#item-ecole").style.display = state.vue === "cssl" || EXPORT ? "none" : "";
+    $("#item-groupe").style.display = state.vue === "groupe" ? "" : "none";
+    $("#item-enseignant").style.display = state.vue === "enseignant" && !EXPORT ? "" : "none";
+}
+
+/* ---------------------------------------------------------------------
+   Sections
+   --------------------------------------------------------------------- */
+
+/* Les colonnes d'une compétence : le résultat final, et si elle porte
+   l'épreuve (m.exam), aussi la note d'école, l'examen, la note école modérée
+   et l'effet de la modération qui l'ont produit — sinon ces sources
+   n'existent pas pour elle et n'auraient que des tirets à montrer.
+
+   « Modération » est la série MODERATION (note modérée − note brute), déjà
+   calculée par élève dans detail_meq._serie() — la même série que le nuage
+   de modération et la colonne « Modération moy. » de rendreGroupes(). Une
+   compétence à deux épreuves (l'anglais&nbsp;: Communiquer et Écrire) obtient
+   donc chacune sa propre colonne Modération, puisque cette fonction est
+   appelée une fois par compétence porteuse. */
+function colonnesCompetence(m, code) {
+    const sel = selection(code);
+    const source = (p, lib, cls) => ({ nom: lib, cls, p, serie: fusionner(sel, p) });
+    if (m.exam.includes(code)) {
+        return [
+            source("BRUT", "Note école", "col-c2"),
+            source("MEQ", "Examen", "col-meq"),
+            source("MODR", "Note école modérée", "col-mod"),
+            source("MODERATION", "Modération", "col-c1"),
+            source("FINAL", "Résultat final", "col-somm"),
+        ];
+    }
+    return [source("FINAL", "Résultat final", "col-somm")];
+}
+
+/* Colonne « Sommaire » : le résultat final porté par le CODE DU COURS
+   lui-même (063414 pour le CST), et non par une compétence.
+
+   C'est une TROISIÈME population, à ne pas confondre avec les deux autres :
+   le ministère publie une ligne par code, et tous les élèves ne portent pas
+   les trois. En 2025-2026, le CST compte 469 élèves sur le cours, 466 sur
+   Résoudre et 417 sur Utiliser — trois chiffres justes, trois codes
+   différents. C'est ce dernier écart qui faisait lire « il manque des élèves »
+   là où il n'en manque aucun (voir le module de calcul, bloc 4).
+
+   C'est aussi la seule colonne DIRECTEMENT comparable à la barre SOMMAIRE de
+   la page PEVR du rapport CCG, qui agrège ce même code sous
+   « 063414(MEQ) ». Placée en FIN de tableau (et non en tête) : c'est un
+   résumé du cours entier, pas une compétence parmi les autres — le lecteur
+   parcourt d'abord les compétences, puis referme sur leur synthèse.
+
+   Une seule source de note : la note d'épreuve et la modération ne touchent
+   jamais le code du cours (sauf en histoire, traitée plus bas). */
+function colonneSommaire(m) {
+    /* L'histoire n'a aucun code de compétence : competencesEffectives() y rend
+       DÉJÀ le cours comme colonne unique, et une colonne Sommaire la
+       répéterait à l'identique. */
+    if (!m.competences.length) return null;
+    const serie = fusionner(selection(m.parent), "FINAL");
+    /* Pas de colonne de tirets : un cours dont l'export ne porte rien sur le
+       code parent n'a pas de sommaire à montrer. */
+    if (!serie.n) return null;
+    return {
+        nom: "Sommaire", exam: false, sommaire: true,
+        cols: [{ nom: "Résultat final", cls: "col-somm", p: "FINAL", serie }],
+    };
+}
+
+function rendreStats() {
+    const m = matiereCourante();
+    const comps = competencesEffectives(m);
+    const box = $("#stats-box");
+
+    const sommaire = colonneSommaire(m);
+    const groupes = comps.map(([code, nom]) => ({
+        nom, exam: m.exam.includes(code), cols: colonnesCompetence(m, code),
+    })).concat(sommaire ? [sommaire] : []);
+    const toutesColonnes = groupes.flatMap(g => g.cols);
+
+    if (!toutesColonnes.some(c => c.serie.n)) {
+        box.innerHTML = `<p class="section-vide">Aucune donnée pour cette sélection.</p>`;
+        return;
+    }
+    const objPassage = OBJECTIFS_PASSAGE[state.ecole];
+
+    /* Aucune cellule ne porte le symbole % : répété identiquement sur toute
+       une ligne, il n'ajoute rien. L'unité est donnée UNE SEULE FOIS, dans
+       le titre de la ligne (première colonne) — déjà le cas des deux lignes
+       de seuil, complété ici pour Moyenne. La colonne Modération (p ===
+       "MODERATION", des POINTS d'écart modérée − brute, pas une note sur
+       100) garde son propre repli « — » sur « zone sans risque » / « note
+       de passage », qui n'ont aucun sens sur un écart pouvant être négatif. */
+    const lignes = [
+        /* Pas d'effectif sous Modération : elle ne porte que sur les élèves
+           ayant la note d'école ET l'épreuve, un sous-ensemble des colonnes
+           voisines — un troisième chiffre y inviterait à de fausses
+           comparaisons d'effectif. */
+        { nom: "Effectif", f: (s, c) => c.p === "MODERATION" ? "—" : (s.n || "—") },
+        { nom: "Moyenne (%)", f: (s, c) => fmt(moyenne(s), 1) },
+        { nom: "Écart-type", f: (s, c) => fmt(ecartType(s), 2) },
+        {
+            nom: `% élèves zone sans risque (≥ ${SEUIL_SANS_RISQUE} %)`,
+            f: (s, c) => c.p === "MODERATION" ? "—" : fmt(partAuDessus(s, SEUIL_SANS_RISQUE), 1),
+            cible: m.pevr, cibleNom: "PEVR",
+        },
+        {
+            nom: `% élèves ayant la note de passage (≥ ${SEUIL_PASSAGE} %)`,
+            f: (s, c) => c.p === "MODERATION" ? "—" : fmt(partAuDessus(s, SEUIL_PASSAGE), 1),
+            cible: objPassage, cibleNom: "objectif école",
+        },
+    ];
+
+    /* Index de la PREMIÈRE colonne de chaque groupe dans toutesColonnes — la
+       frontière où tracer une ligne verticale (grp-sep), du haut du tableau
+       jusqu'en bas, pour qu'on voie d'un coup d'œil où finit une compétence
+       et où commence la suivante (Sommaire y compris, en fin de tableau). */
+    const debutsGroupe = new Set();
+    { let i = 0; for (const g of groupes) { debutsGroupe.add(i); i += g.cols.length; } }
+
+    /* Deux lignes d'en-tête : le nom de la compétence (une colonne par
+       compétence de la matière, voir competencesEffectives), puis la source
+       de note dans chaque compétence — étoffée à école/examen/modérée/
+       modération/final quand la compétence porte l'épreuve, réduite au
+       résultat final sinon. */
+    let html = `<table class="data-table"><thead><tr><th class="col-ind" rowspan="2">Indicateur</th>`;
+    for (const g of groupes) html += `<th class="col-ind grp-sep" colspan="${g.cols.length}">${esc(g.nom)}</th>`;
+    html += `</tr><tr>`;
+    for (const g of groupes) g.cols.forEach((c, j) => {
+        html += `<th class="${c.cls}${j === 0 ? " grp-sep" : ""}">${esc(c.nom)}</th>`;
+    });
+    html += `</tr></thead><tbody>`;
+
+    for (const l of lignes) {
+        html += `<tr${l.cible != null ? ' class="ligne-objectif"' : ""}><td>${esc(l.nom)}`;
+        if (l.cible != null) html += ` <span class="cible">(${l.cibleNom} ${fmt(l.cible, 1)} %)</span>`;
+        html += `</td>`;
+        toutesColonnes.forEach((c, i) => {
+            const v = l.f(c.serie, c);
+            let cls = "num";
+            /* Vert/rouge uniquement sur les lignes porteuses d'une cible, et
+               seulement sur la source qui la chiffre : le PEVR se mesure au
+               résultat final, pas à la note d'école. */
+            if (l.cible != null && c.p === "FINAL" && c.serie.n) {
+                const val = l.nom.includes("sans risque")
+                    ? partAuDessus(c.serie, SEUIL_SANS_RISQUE)
+                    : partAuDessus(c.serie, SEUIL_PASSAGE);
+                if (val != null) cls += val >= l.cible ? " atteint" : " manque";
+            }
+            if (debutsGroupe.has(i)) cls += " grp-sep";
+            html += `<td class="${cls}">${esc(v)}</td>`;
+        });
+        html += `</tr>`;
+    }
+    html += `</tbody></table>`;
+
+    box.innerHTML = html;
+}
+
+/* Un sous-titre par bloc de compétence, mais seulement quand il y en a
+   plusieurs (l'anglais) : une seule compétence porteuse d'épreuve n'a pas
+   besoin de se nommer deux fois. */
+function sousTitreCompetence(nom, premier) {
+    return `<h3 style="margin:${premier ? "0" : "1.1rem"} 0 .4rem;font-size:1rem;color:#2d3748;">${esc(nom)}</h3>`;
+}
+
+/* Cellule numérique de « Statistiques par groupe » : Moyenne école, Moyenne
+   épreuve, Résultat final et Modération n'ont chacune PAS le même effectif —
+   tous les élèves ne portent pas les quatre notes (voir « DEUX EFFECTIFS »
+   dans l'en-tête de le module de calcul). Une seule colonne « Effectif »
+   par ligne (celle du résultat final) ne peut donc pas servir de dénominateur
+   aux autres colonnes : chaque case porte ici son propre n en infobulle, et
+   s'italique sous 10 (repère visuel, pas un seuil de masquage — voir N_MIN
+   pour celui-là, appliqué ailleurs dans ce rapport). */
+function celMesure(serie, texte) {
+    const n = serie.n || 0;
+    const cls = "num" + (n > 0 && n < 10 ? " petit-n" : "");
+    return `<td class="${cls}" title="n = ${n}">${texte}</td>`;
+}
+
+/* Moyenne, ≥ SEUIL_PASSAGE et ≥ SEUIL_SANS_RISQUE d'une même série — les
+   trois portent le MÊME n (une seule population), donc une seule paire
+   classe/infobulle par cellule suffit, via celMesure(). Pas de symbole % :
+   l'en-tête donne déjà l'unité (Moy./≥60/≥74), et 17 colonnes chiffrées n'ont
+   pas la place de le répéter sur chaque case — fmt() plutôt que pct(). */
+function celsMesureTrio(serie) {
+    return celMesure(serie, fmt(moyenne(serie), 1))
+        + celMesure(serie, fmt(partAuDessus(serie, SEUIL_PASSAGE), 1))
+        + celMesure(serie, fmt(partAuDessus(serie, SEUIL_SANS_RISQUE), 1));
+}
+
+function rendreGroupes() {
+    const m = matiereCourante();
+    const comps = competencesExamen(m);
+    const box = $("#groupes-box");
+    let out = "";
+
+    comps.forEach(([code, nom], i) => {
+        if (comps.length > 1) out += sousTitreCompetence(nom, i === 0);
+        const cel = selection(code);
+        /* Les codes Sommaire ne portent pas de numéro de groupe (vérifié sur
+           les données) : la ventilation par groupe n'existe que sur les
+           compétences. */
+        const parGroupe = new Map();
+        for (const c of cel) {
+            /* Combiner l'école et le groupe pour éviter de fusionner les groupes
+               portant le même numéro dans des écoles différentes. */
+            const eco = c[C.ECO];
+            const num = c[C.GROUPE] || "(sans groupe)";
+            const g = eco ? `${eco}|${num}` : num;
+            if (!parGroupe.has(g)) parGroupe.set(g, []);
+            parGroupe.get(g).push(c);
+        }
+        if (!cel.length) {
+            out += `<p class="section-vide">Aucune donnée pour cette compétence.</p>`;
+            return;
+        }
+        if (parGroupe.size <= 1 && parGroupe.has("(sans groupe)")) {
+            out += `<p class="section-vide">Cette compétence ne porte pas de numéro de groupe.</p>`;
+            return;
+        }
+
+        /* Moyenne / ≥60 / ≥74 pour CHACUNE des quatre sources de note (mêmes
+           quatre que « Statistiques combinées », même ordre, mêmes couleurs
+           d'en-tête col-c2/col-meq/col-mod/col-somm) — pas seulement pour le
+           résultat final comme avant. La Modération (col-c1) reste seule avec
+           sa moyenne : un écart signé n'a pas de zone « ≥ seuil » sensée. */
+        let html = `<table class="data-table"><thead><tr>
+            <th class="col-ind sortable" data-sort="ecole">École</th><th class="col-ind sortable" data-sort="groupe">Groupe</th><th class="col-ind sortable" data-sort="enseignant">Enseignant</th>
+            <th class="col-ind sortable" data-sort="effectif">Effectif</th>
+            <th class="col-c2 sortable" data-sort="moy-ecole">Moy. école</th><th class="col-c2 sortable" data-sort="p60-ecole">≥${SEUIL_PASSAGE} école</th><th class="col-c2 sortable" data-sort="p74-ecole">≥${SEUIL_SANS_RISQUE} école</th>
+            <th class="col-meq sortable" data-sort="moy-meq">Moy. examen</th><th class="col-meq sortable" data-sort="p60-meq">≥${SEUIL_PASSAGE} examen</th><th class="col-meq sortable" data-sort="p74-meq">≥${SEUIL_SANS_RISQUE} examen</th>
+            <th class="col-mod sortable" data-sort="moy-modr">Moy. modérée</th><th class="col-mod sortable" data-sort="p60-modr">≥${SEUIL_PASSAGE} modérée</th><th class="col-mod sortable" data-sort="p74-modr">≥${SEUIL_SANS_RISQUE} modérée</th>
+            <th class="col-c1 sortable" data-sort="moder">Modération moy.</th>
+            <th class="col-somm sortable" data-sort="final">Moy. finale</th><th class="col-somm sortable" data-sort="p60-final">≥${SEUIL_PASSAGE} finale</th><th class="col-somm sortable" data-sort="p74-final">≥${SEUIL_SANS_RISQUE} finale</th>
+            </tr></thead><tbody>`;
+
+        const rangs = [...parGroupe.entries()].sort((a, b) =>
+            String(a[0]).localeCompare(String(b[0]), "fr", { numeric: true }));
+
+        for (const [groupe, cellules] of rangs) {
+            /* Extraire l'école et le numéro de groupe du composite key "ECO|NUM" */
+            let libelleGroupe = groupe;
+            let libelleEcole = "—";
+            if (groupe.includes("|")) {
+                const [eco, num] = groupe.split("|");
+                const ecoNom = nomEcole(eco);
+                libelleEcole = ecoNom;
+                libelleGroupe = num;
+            }
+
+            const fin = fusionner(cellules, "FINAL");
+            const brut = fusionner(cellules, "BRUT");
+            const meqS = fusionner(cellules, "MEQ");
+            const modr = fusionner(cellules, "MODR");
+            const mod = fusionner(cellules, "MODERATION");
+            const ens = [...new Set(cellules.map(c => c[C.ENSEIGNANT]).filter(Boolean))];
+            const nbEns = Math.max(...cellules.map(c => c[C.NB_ENSEIGNANTS] || 0), 0);
+            let libelleEns = ens.map(capitaliserNom).join(", ") || "—";
+            if (nbEns > 1) libelleEns += ` (${nbEns} enseignants)`;
+
+            /* Chaque mesure garde son propre effectif (voir celMesure) : la
+               colonne « Effectif » reste celle du résultat final, mais ne
+               sert PLUS de dénominateur aux autres colonnes. */
+            html += `<tr><td>${esc(libelleEcole)}</td><td>${esc(libelleGroupe)}</td><td>${esc(libelleEns)}</td>`;
+            html += celMesure(fin, fin.n || "—");
+            html += celsMesureTrio(brut);
+            html += celsMesureTrio(meqS);
+            html += celsMesureTrio(modr);
+            html += celMesure(mod, fmt(moyenne(mod), 1));
+            html += celsMesureTrio(fin);
+            html += `</tr>`;
+        }
+
+        /* Lignes de repère : reference(), puis referenceCssl() en export
+           enseignant. `f` rend le repère pour une source de note. */
+        for (const f of [reference, referenceCssl]) {
+            const ref = f(code, "FINAL");
+            if (!ref || !ref.serie.n) continue;
+            const b = f(code, "BRUT").serie, q = f(code, "MEQ").serie;
+            const r = f(code, "MODR").serie, o = f(code, "MODERATION").serie;
+            html += `<tr class="ligne-objectif"><td>—</td><td><strong>${esc(ref.nom)}</strong></td><td>—</td>`;
+            html += celMesure(ref.serie, ref.serie.n);
+            html += celsMesureTrio(b);
+            html += celsMesureTrio(q);
+            html += celsMesureTrio(r);
+            html += celMesure(o, fmt(moyenne(o), 1));
+            html += celsMesureTrio(ref.serie);
+            html += `</tr>`;
+        }
+        html += `</tbody></table>`;
+        out += html;
+    });
+
+    box.innerHTML = out;
+
+    /* Ajouter les écouteurs de tri aux en-têtes */
+    box.querySelectorAll(".data-table th.sortable").forEach(th => {
+        th.addEventListener("click", e => {
+            const table = th.closest(".data-table");
+            const sortCol = th.dataset.sort;
+            const tbody = table.querySelector("tbody");
+            const rows = [...tbody.querySelectorAll("tr:not(.ligne-objectif)")];
+            const refRow = tbody.querySelector("tr.ligne-objectif");
+
+            /* Déterminer la direction du tri */
+            let dir = "asc";
+            if (th.classList.contains("asc")) {
+                dir = "desc";
+                th.classList.remove("asc");
+                th.classList.add("desc");
+            } else {
+                th.classList.remove("desc");
+                th.classList.add("asc");
+            }
+            /* Retirer les marqueurs de tri des autres colonnes */
+            table.querySelectorAll("th.sortable").forEach(h => {
+                if (h !== th) {
+                    h.classList.remove("asc", "desc");
+                }
+            });
+
+            /* Fonction de comparaison pour chaque colonne. Les valeurs
+               numériques sont écrites en français (virgule décimale, via
+               fmt()) : parseFloat s'arrête à la virgule sans le remplacement
+               ci-dessous, et tronquerait « 74,3 % » à 74. */
+            const txt = (row, i) => row.cells[i] ? row.cells[i].textContent : "";
+            const num = (row, i) => parseFloat(txt(row, i).replace(",", ".")) || 0;
+            const comparateurs = {
+                ecole: (a, b) => txt(a, 0).localeCompare(txt(b, 0), "fr"),
+                groupe: (a, b) => String(txt(a, 1)).localeCompare(String(txt(b, 1)), "fr", { numeric: true }),
+                enseignant: (a, b) => txt(a, 2).localeCompare(txt(b, 2), "fr"),
+                effectif: (a, b) => (parseInt(txt(a, 3)) || 0) - (parseInt(txt(b, 3)) || 0),
+                "moy-ecole": (a, b) => num(a, 4) - num(b, 4),
+                "p60-ecole": (a, b) => num(a, 5) - num(b, 5),
+                "p74-ecole": (a, b) => num(a, 6) - num(b, 6),
+                "moy-meq": (a, b) => num(a, 7) - num(b, 7),
+                "p60-meq": (a, b) => num(a, 8) - num(b, 8),
+                "p74-meq": (a, b) => num(a, 9) - num(b, 9),
+                "moy-modr": (a, b) => num(a, 10) - num(b, 10),
+                "p60-modr": (a, b) => num(a, 11) - num(b, 11),
+                "p74-modr": (a, b) => num(a, 12) - num(b, 12),
+                moder: (a, b) => num(a, 13) - num(b, 13),
+                final: (a, b) => num(a, 14) - num(b, 14),
+                "p60-final": (a, b) => num(a, 15) - num(b, 15),
+                "p74-final": (a, b) => num(a, 16) - num(b, 16),
+            };
+
+            const comp = comparateurs[sortCol];
+            if (comp) {
+                rows.sort(comp);
+                if (dir === "desc") rows.reverse();
+
+                /* Réinsérer les lignes triées */
+                rows.forEach(row => tbody.appendChild(row));
+                /* Remettre la ligne de référence à la fin */
+                if (refRow) tbody.appendChild(refRow);
+            }
+        });
+    });
+}
+
+/* Paramètres de modération d'UN groupe : moyennes et écarts-types de la note
+   d'école et de l'épreuve, sur les paires (école, épreuve) de ELEVES_JOINT —
+   exactement les élèves ayant les deux notes. null si moins de deux paires
+   ou dispersion nulle. Le dénominateur (n−1 ou n) est sans effet sur la
+   transformation : les deux écarts-types portent sur les mêmes élèves, et
+   seul leur rapport entre dans la formule. */
+function parametresModeration(cel) {
+    const pts = cel[C.ELEVES_JOINT];
+    if (!pts || pts.length < 2) return null;
+    const n = pts.length;
+    let somB = 0, somQ = 0;
+    for (const [, b, q] of pts) { somB += b; somQ += q; }
+    const mB = somB / n, mQ = somQ / n;
+    let varB = 0, varQ = 0;
+    for (const [, b, q] of pts) { varB += (b - mB) ** 2; varQ += (q - mQ) ** 2; }
+    const sB = Math.sqrt(varB / (n - 1)), sQ = Math.sqrt(varQ / (n - 1));
+    return sB > 0 && sQ > 0 ? { mB, sB, mQ, sQ } : null;
+}
+
+function rendreTransfo() {
+    const m = matiereCourante();
+    const comps = competencesExamen(m);
+    const box = $("#transfo-box");
+    let out = "";
+
+    comps.forEach(([code, nom], i) => {
+        if (comps.length > 1) out += sousTitreCompetence(nom, i === 0);
+        /* Un jeu de paramètres PAR GROUPE (une cellule = école × groupe), sur
+           les seuls élèves du groupe ayant la note d'école ET l'épreuve — les
+           absents n'y entrent donc jamais, quelle que soit #toggle-absents.
+           Plusieurs groupes affichés : chaque transformation se calcule dans
+           son groupe, puis on fait la moyenne des groupes (non pondérée). */
+        const groupes = selection(code).map(parametresModeration).filter(Boolean);
+
+        if (!groupes.length) {
+            out += `<p class="section-vide">Transformation non calculable ici : il faut, dans au moins un groupe, deux élèves ayant la note d'école et l'épreuve, avec une dispersion non nulle sur chacune.</p>`;
+            return;
+        }
+        const moyGroupes = f => groupes.reduce((s, g) => s + f(g), 0) / groupes.length;
+        const versModere = x => moyGroupes(g => Math.min(100, g.mQ + (g.sQ / g.sB) * (x - g.mB)));
+        const versBrut = y => moyGroupes(g => g.mB + (g.sB / g.sQ) * (y - g.mQ));
+        const temoins = [20, 40, 60, 80, 100];
+
+        let html;
+        if (groupes.length === 1) {
+            const g = groupes[0];
+            html = `<p><span class="muted">Note d'école&nbsp;: moyenne ${pct(g.mB)}, écart-type ${fmt(g.sB, 2)}
+                &nbsp;·&nbsp; Épreuve&nbsp;: moyenne ${pct(g.mQ)}, écart-type ${fmt(g.sQ, 2)}</span></p>`;
+        } else {
+            html = `<p><span class="muted">Transformation calculée dans chacun des ${groupes.length} groupes, puis moyennée entre les groupes.</span></p>`;
+        }
+        html += `<table class="data-table"><thead><tr>
+            <th class="col-c2">Note brute</th><th class="col-mod">→ après modération</th>
+            <th class="col-mod">Cible après modération</th><th class="col-c2">← note brute nécessaire</th>
+            </tr></thead><tbody>`;
+        for (const t of temoins) {
+            html += `<tr><td class="num">${t}</td><td class="num">${pct(versModere(t))}</td>
+                     <td class="num">${t}</td><td class="num">${pct(versBrut(t))}</td></tr>`;
+        }
+        html += `</tbody></table>`;
+        out += html;
+    });
+
+    box.innerHTML = out;
+}
+
+/* --- Note de l'école × note du ministère ------------------------------
+   Un point par élève, nom et notes au survol (ELEVES_JOINT). Quand cette
+   colonne est vide — bases bâties sur l'ancienne forme par école (XXX_SEC4),
+   où la table MEQ ne porte ni NOM ni PRENM — la sélection affiche un message
+   plutôt qu'un graphique : aucun élève n'y est identifiable.
+   ---------------------------------------------------------------------- */
+
+/* Couleur du quadrant, d'après les notes de l'élève. */
+function teinteQuadrant(x, y) {
+    const okE = x >= SEUIL_PASSAGE, okQ = y >= SEUIL_PASSAGE;
+    if (okE && okQ) return "56,161,105";
+    if (!okE && !okQ) return "229,62,62";
+    if (!okE && okQ) return "214,158,46";
+    return "221,107,32";
+}
+
+function compterQuadrants(items) {
+    const q = { vert: 0, jaune: 0, orange: 0, rouge: 0, total: 0 };
+    for (const [x, y, n] of items) {
+        const okE = x >= SEUIL_PASSAGE, okQ = y >= SEUIL_PASSAGE;
+        q.total += n;
+        if (okE && okQ) q.vert += n;
+        else if (!okE && !okQ) q.rouge += n;
+        else if (!okE && okQ) q.jaune += n;
+        else q.orange += n;
+    }
+    return q;
+}
+
+function quadrantsHTML(q) {
+    const part = n => q.total ? (n / q.total * 100) : 0;
+    return `<div class="quadrants">
+        <div class="quadrant q-vert"><div class="q-nom">Réussite aux deux</div><div class="q-val">${pct(part(q.vert))}</div><div class="q-nom">${q.vert} élèves</div></div>
+        <div class="quadrant q-jaune"><div class="q-nom">Épreuve seule</div><div class="q-val">${pct(part(q.jaune))}</div><div class="q-nom">${q.jaune} élèves</div></div>
+        <div class="quadrant q-orange"><div class="q-nom">École seule</div><div class="q-val">${pct(part(q.orange))}</div><div class="q-nom">${q.orange} élèves</div></div>
+        <div class="quadrant q-rouge"><div class="q-nom">Échec aux deux</div><div class="q-val">${pct(part(q.rouge))}</div><div class="q-nom">${q.rouge} élèves</div></div>
+    </div>`;
+}
+
+/* Les élèves de la sélection ayant les DEUX notes, chacun rattaché au groupe
+   de sa cellule — le groupe n'est pas répété dans ELEVES_JOINT, il est déjà
+   porté par la cellule qui contient la liste. */
+function elevesSelection(cel) {
+    const pts = [];
+    for (const c of cel) {
+        const liste = c[C.ELEVES_JOINT];
+        if (!liste) continue;
+        /* Combiner l'école et le groupe pour distinguer les groupes avec le même
+           numéro dans des écoles différentes. */
+        const eco = c[C.ECO];
+        const num = c[C.GROUPE] || "(sans groupe)";
+        const g = eco ? `${eco}|${num}` : num;
+        for (const [nom, x, y] of liste) pts.push({ nom, g, x, y });
+    }
+    return pts;
+}
+
+function nuageEleves(pts) {
+    const q = compterQuadrants(pts.map(p => [p.x, p.y, 1]));
+
+    /* Aire de tracé CARRÉE, sur deux échelles 0-100 identiques : c'est ce qui
+       fait de la diagonale une vraie bissectrice à 45°, donc ce qui rend
+       lisible « au-dessus, l'épreuve est plus généreuse que l'école ». */
+    const mL = 48, mR = 16, mT = 14, mB = 46, COTE = 446;
+    const W = mL + COTE + mR, H = mT + COTE + mB;
+    const sx = v => mL + v / 100 * COTE;
+    const sy = v => mT + (100 - v) / 100 * COTE;
+    const r = pts.length > 600 ? 2.4 : 3.2;
+
+    /* Les attributs width/height sont indispensables ICI : ce SVG est un
+       ÉLÉMENT FLEX, à côté des quadrants. Sans
+       taille intrinsèque, un SVG à viewBox seul se replie à zéro dans un
+       conteneur flex, et le graphique disparaît. La règle CSS
+       `max-width:100%; height:auto` le laisse rétrécir en fenêtre étroite. */
+    let svg = `<svg class="meq-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Note de l'école et note à l'épreuve, un point par élève">`;
+    for (let v = 0; v <= 100; v += 10) {
+        svg += `<line class="grille" x1="${mL}" y1="${sy(v).toFixed(1)}" x2="${mL + COTE}" y2="${sy(v).toFixed(1)}"/>`;
+        svg += `<line class="grille" x1="${sx(v).toFixed(1)}" y1="${mT}" x2="${sx(v).toFixed(1)}" y2="${mT + COTE}"/>`;
+    }
+    for (let v = 0; v <= 100; v += 20) {
+        svg += `<text x="${mL - 6}" y="${(sy(v) + 4).toFixed(1)}" text-anchor="end">${v}</text>`;
+        svg += `<text x="${sx(v).toFixed(1)}" y="${H - mB + 16}" text-anchor="middle">${v}</text>`;
+    }
+    svg += `<line class="diag" x1="${sx(0).toFixed(1)}" y1="${sy(0).toFixed(1)}" x2="${sx(100).toFixed(1)}" y2="${sy(100).toFixed(1)}"/>`;
+    svg += `<line class="seuil" x1="${sx(SEUIL_PASSAGE).toFixed(1)}" y1="${mT}" x2="${sx(SEUIL_PASSAGE).toFixed(1)}" y2="${mT + COTE}"/>`;
+    svg += `<line class="seuil" x1="${mL}" y1="${sy(SEUIL_PASSAGE).toFixed(1)}" x2="${mL + COTE}" y2="${sy(SEUIL_PASSAGE).toFixed(1)}"/>`;
+    svg += `<line class="axe" x1="${mL}" y1="${mT}" x2="${mL}" y2="${mT + COTE}"/>`;
+    svg += `<line class="axe" x1="${mL}" y1="${mT + COTE}" x2="${mL + COTE}" y2="${mT + COTE}"/>`;
+
+    /* Deux élèves ayant EXACTEMENT les deux mêmes notes se superposeraient au
+       pixel près, et le second serait impossible à survoler. Les doublons
+       exacts sont donc étalés en spirale (angle d'or) autour de leur position
+       réelle : l'amas se lit toujours comme un amas, et chaque point garde sa
+       cible de survol. Le décalage est PUREMENT graphique — l'infobulle
+       affiche les notes exactes. */
+    const paquets = new Map();
+    for (const p of pts) {
+        const k = p.x + "|" + p.y;
+        if (!paquets.has(k)) paquets.set(k, []);
+        paquets.get(k).push(p);
+    }
+    const ANGLE_OR = 2.39996323;
+    for (const paquet of paquets.values()) {
+        paquet.sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
+        paquet.forEach((p, j) => {
+            const rayon = paquet.length > 1 ? r * 0.62 * Math.sqrt(j) : 0;
+            const cx = sx(p.x) + rayon * Math.cos(j * ANGLE_OR);
+            const cy = sy(p.y) + rayon * Math.sin(j * ANGLE_OR);
+            const teinte = teinteQuadrant(p.x, p.y);
+            svg += `<circle class="nuage-pt" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r}"`
+                 + ` fill="rgba(${teinte},.55)" stroke="rgb(${teinte})" stroke-width="1"`
+                 + ` data-nom="${esc(p.nom)}" data-grp="${esc(p.g)}" data-e="${p.x}" data-q="${p.y}"></circle>`;
+        });
+    }
+
+    svg += `<text x="${(mL + mL + COTE) / 2}" y="${H - 8}" text-anchor="middle">Note de l'école (%)</text>`;
+    svg += `<text x="13" y="${mT + COTE / 2}" text-anchor="middle" transform="rotate(-90 13 ${mT + COTE / 2})">Note à l'épreuve du ministère (%)</text>`;
+    svg += `</svg>`;
+
+    return `<div class="densite-wrap"><div>${svg}</div>${quadrantsHTML(q)}</div>
+        <div class="legende">
+            <span><i style="background:#38a169"></i> réussite aux deux</span>
+            <span><i style="background:#d69e2e"></i> réussite à l'épreuve seulement</span>
+            <span><i style="background:#dd6b20"></i> réussite à l'école seulement</span>
+            <span><i style="background:#e53e3e"></i> échec aux deux</span>
+            <span class="legende-texte-nuage">Un point par élève (${q.total} au total)&nbsp;: le survol donne le nom, le groupe et les deux notes. Traits rouges&nbsp;: seuil de ${SEUIL_PASSAGE} %. Diagonale&nbsp;: les deux notes égales. Les élèves ayant exactement les mêmes deux notes sont étalés en petit amas pour rester survolables.</span>
+        </div>`;
+}
+
+function rendreNuage() {
+    const m = matiereCourante();
+    const comps = competencesExamen(m);
+    const box = $("#nuage-box");
+    let out = "";
+
+    comps.forEach(([code, nom], i) => {
+        if (comps.length > 1) out += sousTitreCompetence(nom, i === 0);
+        const pts = elevesSelection(selection(code));
+        out += pts.length ? nuageEleves(pts)
+             : `<p class="section-vide">Aucun élève n'a à la fois une note d'école et une note d'épreuve pour cette sélection (ou les noms ne sont pas disponibles dans cette base).</p>`;
+    });
+
+    box.innerHTML = out;
+}
+
+/* --- Nuage de modération : un point par élève, un groupe à la fois ----
+
+   Contrairement à la version précédente (un point par groupe, agrégé),
+   ce nuage exige un groupe PRÉCIS (vue "groupe" + un groupe choisi dans
+   #f-groupe, déjà le sélecteur d'école/groupe/année du reste du rapport)
+   et trace un point par élève de ce seul groupe. La régression se calcule
+   alors directement sur ces points (moindres carrés ordinaires), au lieu
+   des moments croisés SOM_BB/SOM_BM utilisés par l'ancienne version
+   multi-groupes — ici il n'y a qu'un groupe, donc rien à additionner
+   entre cellules. Nominatif au survol, comme le nuage note-école/MEQ. */
+
+function elevesModerationSelection(cel) {
+    const pts = [];
+    for (const c of cel) {
+        const liste = c[C.ELEVES_MODERATION_JOINT];
+        if (!liste) continue;
+        for (const [nom, brut, modr] of liste) pts.push({ nom, x: brut, y: modr - brut });
+    }
+    return pts;
+}
+
+function nuageModeration(pts) {
+    /* Régression des moindres carrés directement sur les points affichés —
+       plus besoin des moments croisés (SOM_BB, SOM_BM) : un seul groupe, un
+       seul jeu de points, rien à agréger entre cellules. */
+    let n = 0, sx_ = 0, sy_ = 0, sxx = 0, sxy = 0;
+    for (const p of pts) { n++; sx_ += p.x; sy_ += p.y; sxx += p.x * p.x; sxy += p.x * p.y; }
+    let pente = null, ordonnee = null;
+    if (n > 1) {
+        const denom = sxx - sx_ * sx_ / n;
+        if (Math.abs(denom) > 1e-9) {
+            pente = (sxy - sx_ * sy_ / n) / denom;
+            ordonnee = sy_ / n - pente * sx_ / n;
+        }
+    }
+
+    const W = 480, H = 300, mL = 46, mR = 14, mT = 12, mB = 36;
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    const xMin = Math.min(...xs) - 4, xMax = Math.max(...xs) + 4;
+    const yAbs = Math.max(6, ...ys.map(v => Math.abs(v))) * 1.15;
+    const sx = v => mL + (v - xMin) / (xMax - xMin || 1) * (W - mL - mR);
+    const sy = v => mT + (yAbs - v) / (2 * yAbs || 1) * (H - mT - mB);
+
+    /* width/height : sans eux, le SVG s'étire sur toute la largeur du panneau
+       et grossit points et texte d'autant. */
+    let svg = `<svg class="meq-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Modération, un point par élève">`;
+    for (let j = 0; j <= 4; j++) {
+        const v = -yAbs + j * (2 * yAbs / 4);
+        svg += `<line class="grille" x1="${mL}" y1="${sy(v).toFixed(1)}" x2="${W - mR}" y2="${sy(v).toFixed(1)}"/>`;
+        svg += `<text x="${mL - 6}" y="${(sy(v) + 3).toFixed(1)}" text-anchor="end">${fmt(v, 0)}</text>`;
+    }
+    svg += `<line class="axe" x1="${mL}" y1="${sy(0).toFixed(1)}" x2="${W - mR}" y2="${sy(0).toFixed(1)}"/>`;
+    svg += `<line class="axe" x1="${mL}" y1="${mT}" x2="${mL}" y2="${H - mB}"/>`;
+    for (let j = 0; j <= 4; j++) {
+        const v = xMin + j * (xMax - xMin) / 4;
+        svg += `<text x="${sx(v).toFixed(1)}" y="${H - mB + 16}" text-anchor="middle">${fmt(v, 0)}</text>`;
+    }
+    if (pente != null) {
+        const y1 = pente * xMin + ordonnee, y2 = pente * xMax + ordonnee;
+        const c1 = Math.max(-yAbs, Math.min(yAbs, y1)), c2 = Math.max(-yAbs, Math.min(yAbs, y2));
+        svg += `<line class="regress" x1="${sx(xMin).toFixed(1)}" y1="${sy(c1).toFixed(1)}" x2="${sx(xMax).toFixed(1)}" y2="${sy(c2).toFixed(1)}"/>`;
+    }
+
+    /* Doublons exacts (même note brute, même écart) étalés en spirale, même
+       technique que nuageEleves() — sinon le second élève d'une paire
+       identique serait impossible à survoler. */
+    const r = pts.length > 150 ? 2.1 : pts.length > 60 ? 2.7 : 3.4;
+    const paquets = new Map();
+    for (const p of pts) {
+        const k = p.x + "|" + p.y;
+        if (!paquets.has(k)) paquets.set(k, []);
+        paquets.get(k).push(p);
+    }
+    const ANGLE_OR = 2.39996323;
+    for (const paquet of paquets.values()) {
+        paquet.sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
+        paquet.forEach((p, j) => {
+            const rayon = paquet.length > 1 ? r * 0.62 * Math.sqrt(j) : 0;
+            const cx = sx(p.x) + rayon * Math.cos(j * ANGLE_OR);
+            const cy = sy(p.y) + rayon * Math.sin(j * ANGLE_OR);
+            svg += `<circle class="nuage-pt" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r}"`
+                 + ` fill="rgba(151,90,22,.55)" stroke="#975a16" stroke-width="1"`
+                 + ` data-nom="${esc(p.nom)}" data-brut="${p.x}" data-ecart="${p.y}"></circle>`;
+        });
+    }
+
+    svg += `<text x="${(mL + (W - mR)) / 2}" y="${H - 6}" text-anchor="middle">Note de l'école (%)</text>`;
+    svg += `<text x="14" y="${(mT + H - mB) / 2}" text-anchor="middle" transform="rotate(-90 14 ${(mT + H - mB) / 2})">Modération (points)</text>`;
+    svg += `</svg>`;
+
+    const desc = pente != null
+        ? `Droite de régression sur ${n} élève(s) : pente ${fmt(pente, 2)}, ordonnée à l'origine ${fmt(ordonnee, 1)}.
+           Une pente négative signifie que la modération abaisse davantage les notes d'école élevées.`
+        : `Régression non calculable (dispersion nulle ou trop peu d'élèves).`;
+    return svg + `<p class="muted" style="margin-top:.5rem">${esc(desc)} Un point par élève (${n} au total). Le survol donne le nom, la note d'école et l'écart de modération. Au-dessus de zéro, la modération relève la note ; en dessous, elle l'abaisse.</p>`;
+}
+
+function rendreModeration() {
+    const m = matiereCourante();
+    const comps = competencesExamen(m);
+    const box = $("#moder-box");
+    let out = "";
+
+    const groupePrecis = state.vue === "groupe" && state.groupe;
+
+    comps.forEach(([code, nomComp], i) => {
+        if (comps.length > 1) out += sousTitreCompetence(nomComp, i === 0);
+
+        if (!groupePrecis) {
+            out += `<p class="section-vide section-astuce">Choisissez la vue « Par groupe », une école et un groupe précis (menus ci-dessus) pour afficher le nuage de modération — un point par élève, un groupe à la fois.</p>`;
+            return;
+        }
+
+        const pts = elevesModerationSelection(selection(code));
+        if (pts.length < N_MIN) {
+            out += `<p class="section-vide">Pas assez d'élèves ayant la note d'école, la note modérée et l'épreuve dans ce groupe pour afficher le nuage (minimum ${N_MIN}, ${pts.length} disponible${pts.length > 1 ? "s" : ""}).</p>`;
+            return;
+        }
+
+        out += nuageModeration(pts);
+    });
+
+    box.innerHTML = out;
+}
+
+/* --- Carte de chaleur par question ------------------------------------
+
+   Mêmes filtres que le reste du rapport (année, vue, école, groupe,
+   enseignant), sur une charge utile séparée : une cellule par (école, année,
+   cours, groupe, type de question, question).
+
+   Le code de cours interrogé est celui des COMPÉTENCES PORTEUSES de l'épreuve
+   (m.exam), pas le cours parent : l'export par question porte 063420
+   (« Utiliser ») pour le CST, jamais 063414. Même règle que les sections
+   Transformation / Nuage / Modération, qui passent toutes par
+   competencesExamen().
+   ---------------------------------------------------------------------- */
+
+/* Libellés des types de question, dans l'ordre où l'épreuve les pose.
+   Les trois codes sont ceux RELEVÉS DANS L'EXPORT, et ils correspondent un à
+   un aux trois colonnes de total par partie de la même table — ce qui est la
+   raison de croire au mapping plutôt qu'un simple air de famille :
+
+     OB  questions 1-6   sur 4     <-> NOTE_CALC_PART_OBJEC        (6 x 4  =  24)
+     DC  questions 7-10  sur 4     <-> NOTE_CALC_PART_DEVLP_COURT  (4 x 4  =  16)
+     AD  questions 11-16 sur 100   <-> NOTE_CALC_PART_DEVLP        (6 x 100 = 600)
+
+   Vérifié sur une ligne réelle : un élève à 24 / 14 / 572 sur ces trois
+   colonnes, soit exactement les plafonds ci-dessus.
+
+   ATTENTION AU BARÈME DES « AD » : 100 par question, et non 10 comme dans
+   l'ancien projet (dont le CSV par question suivait une autre échelle). C'est
+   pourquoi le barème est lu DANS LES DONNÉES (SCORE_MAX, par question) et
+   jamais codé en dur ici — le libellé nomme la partie, il ne décide pas du
+   calcul.
+
+   Un type inconnu garde son code brut plutôt qu'un libellé inventé, et passe
+   en fin de liste : même principe que nom_competence() côté Python — une
+   donnée non reconnue doit rester identifiable, pas se déguiser. */
+const TYPES_QUESTION = [
+    { cles: ["OB", "OBJ", "OBJEC", "QCM", "CM"], nom: "Questions à choix multiples" },
+    { cles: ["DC", "CO", "CT", "COURT", "DEVLP_COURT", "RC"], nom: "Questions à réponses courtes" },
+    { cles: ["AD", "DE", "DV", "DEVLP", "LONG", "RL"], nom: "Questions à développement" },
+];
+
+function infoType(code) {
+    const i = TYPES_QUESTION.findIndex(t => t.cles.includes(code));
+    return i < 0 ? { rang: TYPES_QUESTION.length, nom: `Type « ${code} »` }
+                 : { rang: i, nom: TYPES_QUESTION[i].nom };
+}
+
+/* Sélection, calquée sur selection() — mêmes règles, autre tableau. */
+function selectionQuestions(code) {
+    const base = CELLULES_QUESTIONS.filter(
+        c => c[CQ.ANNEE] === state.annee && c[CQ.CD_COURS] === code);
+    if (state.vue === "cssl") return base;
+    const parEcole = base.filter(c => c[CQ.ECO] === state.ecole);
+    if (state.vue === "enseignant" && state.enseignant) {
+        return parEcole.filter(c => c[CQ.ENSEIGNANT_ID] === state.enseignant);
+    }
+    if (state.vue === "groupe" && state.groupe) {
+        return parEcole.filter(c => (c[CQ.GROUPE] || "(sans groupe)") === state.groupe);
+    }
+    return parEcole;
+}
+
+/* Repère de comparaison, même logique que reference() : le reste de l'école
+   dès qu'un groupe ou un enseignant précis est choisi (soustraction exacte,
+   les effectifs et les sommes étant additifs), le __NOM_CSS__ sinon. */
+function referenceQuestions(code) {
+    if (EXPORT_ENS) return null;   /* voir reference() */
+    const cible = (state.vue === "enseignant" && state.enseignant)
+               || (state.vue === "groupe" && state.groupe);
+    if (cible) {
+        const ecole = CELLULES_QUESTIONS.filter(
+            c => c[CQ.ANNEE] === state.annee && c[CQ.CD_COURS] === code
+              && c[CQ.ECO] === state.ecole);
+        const lui = new Set(selectionQuestions(code));
+        return { cellules: ecole.filter(c => !lui.has(c)), nom: "Reste de l'école" };
+    }
+    if (state.vue === "cssl") return null;
+    return {
+        cellules: CELLULES_QUESTIONS.filter(
+            c => c[CQ.ANNEE] === state.annee && c[CQ.CD_COURS] === code),
+        nom: "__NOM_CSS__",
+    };
+}
+
+/* Score obtenu rapporté au score POSSIBLE, et non moyenne des pourcentages.
+
+   Le total possible est Σ (effectif × barème) cellule par cellule, parce que
+   la colonne « Ensemble » agrège des questions de barèmes DIFFÉRENTS — une
+   question sur 4 et une sur 10 dans le même total. Diviser par un barème
+   unique (le plus grand, p. ex.) sous-estimerait la réussite d'autant que les
+   questions légères sont nombreuses. Sur une seule question, où le barème est
+   constant, la formule se réduit exactement à la moyenne / barème.
+
+   `n` compte des RÉPONSES, pas des élèves : sur la colonne « Ensemble », un
+   élève en fournit autant qu'il y a de questions. C'est ce que dit
+   l'infobulle — le nombre d'élèves distincts n'est pas récupérable depuis des
+   statistiques suffisantes, deux questions pouvant avoir deux populations. */
+function tauxReussite(cellules) {
+    let n = 0, som = 0, possible = 0;
+    const baremes = new Set();
+    for (const c of cellules) {
+        const nc = c[CQ.N] || 0, bareme = c[CQ.SCORE_MAX] || 0;
+        if (!nc || !bareme) continue;
+        n += nc;
+        som += c[CQ.SOM] || 0;
+        possible += nc * bareme;
+        baremes.add(bareme);
+    }
+    if (!possible) return { n: n, pct: null };
+    return {
+        n: n,
+        pct: som / possible * 100,
+        moy: som / n,
+        /* Le barème n'est rendu que s'il est unique dans le lot : sur la
+           colonne « Ensemble », « score moyen 3,2 sur 4 » serait faux dès que
+           deux questions ont deux barèmes. */
+        bareme: baremes.size === 1 ? [...baremes][0] : null,
+    };
+}
+
+/* Rouge -> jaune -> vert, interpolé sur le taux de réussite, avec les mêmes
+   teintes que les quadrants du nuage (teinteQuadrant) pour que les deux
+   sections se lisent avec le même code couleur. Le point de bascule est le
+   seuil de passage, pas 50 % : c'est lui qui sépare réussite et échec
+   partout ailleurs dans ce rapport. */
+function teinteReussite(p) {
+    const ROUGE = [229, 62, 62], JAUNE = [214, 158, 46], VERT = [56, 161, 105];
+    const melange = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+    const borne = Math.max(0, Math.min(100, p));
+    const teinte = borne <= SEUIL_PASSAGE
+        ? melange(ROUGE, JAUNE, borne / SEUIL_PASSAGE)
+        : melange(JAUNE, VERT, (borne - SEUIL_PASSAGE) / (100 - SEUIL_PASSAGE));
+    return teinte.join(",");
+}
+
+function tableauQuestions(cellules, refs) {
+    /* Colonnes : les questions présentes, dans l'ordre numérique. */
+    const numeros = [...new Set(cellules.map(c => c[CQ.NO_QUEST]))].sort((a, b) => a - b);
+
+    /* Lignes : les enseignants, clé composite école|enseignant comme ailleurs
+       — deux écoles peuvent réutiliser le même code ENSEIGNANT_ID. Un
+       enseignant qui porte plusieurs groupes n'a ainsi qu'une seule ligne,
+       combinant ses groupes plutôt que de les répéter un par un. */
+    const parEnseignant = new Map();
+    for (const c of cellules) {
+        const g = c[CQ.ECO] ? `${c[CQ.ECO]}|${c[CQ.ENSEIGNANT_ID] || "(sans enseignant)"}`
+                            : (c[CQ.ENSEIGNANT_ID] || "(sans enseignant)");
+        if (!parEnseignant.has(g)) parEnseignant.set(g, []);
+        parEnseignant.get(g).push(c);
+    }
+
+    /* Test de permutation de CETTE case, ou null s'il n'y en a pas.
+
+       Trois garde-fous, et le deuxième est le seul qui compte vraiment :
+
+       1. `unite` : seules les lignes d'enseignant sont testées (la ligne de
+          repère n'a personne à qui se comparer, c'est elle la comparaison).
+       2. `p[CP.N] === t.n` : le test a été calculé sur un effectif précis;
+          si la case n'affiche pas exactement le même nombre de réponses, elle
+          ne montre PAS la même population — un filtre de groupe a restreint la
+          ligne d'un enseignant qui en porte plusieurs, par exemple. Mieux vaut
+          aucun marqueur qu'un marqueur emprunté à une autre population.
+       3. N_MIN : sous ce seuil la case ne publie déjà pas sa statistique. */
+    const testPerm = (lot, t, unite) => {
+        if (!unite || !PERM_PAR_CLE.size || t.n < N_MIN) return null;
+        const nos = new Set(lot.map(c => c[CQ.NO_QUEST]));
+        const no = nos.size === 1 ? [...nos][0] : "";   /* "" = colonne Ensemble */
+        const p = PERM_PAR_CLE.get([unite.eco, unite.ens, state.annee,
+                                    lot[0][CQ.CD_COURS], lot[0][CQ.TYPE_QUEST], no].join("|"));
+        return (p && p[CP.N] === t.n) ? p : null;
+    };
+
+    const cellule = (lot, mince, unite) => {
+        const t = tauxReussite(lot);
+        if (t.pct == null) return `<td class="q-cell">—</td>`;
+        const style = ` style="background:rgba(${teinteReussite(t.pct)},.42)"`;
+        const detail = t.bareme
+            ? `score moyen ${fmt(t.moy, 2)} sur ${fmt(t.bareme, 0)}`
+            : `toutes questions confondues`;
+
+        /* La q-valeur (FDR) décide sur les questions, le p brut sur la colonne
+           « Ensemble » — elle résume des questions déjà testées et ne fait pas
+           partie de la famille corrigée (voir detail_meq.aggreger_permutations). */
+        const perm = testPerm(lot, t, unite);
+        const seuil = perm ? (perm[CP.Q] == null ? perm[CP.P] : perm[CP.Q]) : null;
+        const signif = seuil != null && seuil < SEUIL_SIGNIF;
+        const marque = signif
+            ? `<span class="q-sig">${perm[CP.ECART] >= 0 ? "▲" : "▼"}</span>` : "";
+        /* « 0,000 » ferait passer la résolution du test (1/5001) pour une
+           impossibilité : sous le millième, on écrit l'inégalité. */
+        const fmtP = v => v < 0.001 ? "&lt; 0,001" : fmt(v, 3);
+        const infoPerm = perm
+            ? ` — ${signif
+                    ? (perm[CP.ECART] >= 0 ? "au-dessus" : "en dessous") + " du __NOM_CSS__ de "
+                      + fmt(Math.abs(perm[CP.ECART]), 1) + " point(s)"
+                    : "écart au __NOM_CSS__ non significatif"}`
+              + ` (p = ${fmtP(perm[CP.P])}`
+              + (perm[CP.Q] == null ? "" : `, q = ${fmtP(perm[CP.Q])}`) + ")"
+            : "";
+
+        const cls = "q-cell" + (mince && t.n < N_MIN ? " q-mince" : "")
+                  + (signif ? " q-signif" : "");
+        return `<td class="${cls}"${style} title="${pct(t.pct)} — ${detail} — ${t.n} réponse(s)${infoPerm}">`
+             + `<span class="q-pct">${fmt(t.pct, 0)}${marque}</span>`
+             + `<span class="q-n">n=${t.n}</span></td>`;
+    };
+
+    let html = `<table class="data-table"><thead><tr>`
+             + `<th class="col-ind q-tete">Enseignant</th><th class="col-ind">Groupe(s)</th>`;
+    for (const no of numeros) html += `<th class="col-ind q-num">Q${esc(no)}</th>`;
+    html += `<th class="col-somm q-num">Ensemble</th></tr></thead><tbody>`;
+
+    /* Le repère (__NOM_CSS__ ou reste de l'école) ouvre le tableau : c'est la
+       référence à laquelle comparer chaque ligne d'enseignant, elle doit
+       donc se lire en premier plutôt qu'après avoir défilé toutes les
+       lignes. */
+    for (const ref of refs) {
+        if (!ref.cellules.length) continue;
+        html += `<tr class="ligne-objectif"><td class="q-tete"><strong>${esc(ref.nom)}</strong></td><td>—</td>`;
+        for (const no of numeros) {
+            html += cellule(ref.cellules.filter(c => c[CQ.NO_QUEST] === no), false, null);
+        }
+        html += cellule(ref.cellules, false, null) + `</tr>`;
+    }
+
+    const rangs = [...parEnseignant.entries()].map(([g, lot]) => {
+        const eco = g.includes("|") ? g.split("|")[0] : null;
+        const nomEns = capitaliserNom(lot[0][CQ.ENSEIGNANT]) || "(sans enseignant)";
+        /* Export école : une seule ligne, l'école fusionnée sans enseignant
+           ni groupe (export_meq.py). */
+        const libelle = EXPORT_ECOLE ? nomEcole(eco)
+                      : eco ? `${nomEcole(eco)} – ${nomEns}` : nomEns;
+        const groupes = EXPORT_ECOLE ? "—"
+            : [...new Set(lot.map(c => c[CQ.GROUPE] || "(sans groupe)"))]
+            .sort((a, b) => String(a).localeCompare(String(b), "fr", { numeric: true }))
+            .join(", ");
+        /* Unité du test de permutation : la ligne elle-même, (école,
+           enseignant) — la clé sous laquelle detail_meq l'a testée. */
+        const unite = { eco: lot[0][CQ.ECO], ens: lot[0][CQ.ENSEIGNANT_ID] || "" };
+        return { libelle, groupes, lot, unite };
+    }).sort((a, b) => a.libelle.localeCompare(b.libelle, "fr"));
+
+    for (const { libelle, groupes, lot, unite } of rangs) {
+        html += `<tr><td class="q-tete">${esc(libelle)}</td><td>${esc(groupes)}</td>`;
+        for (const no of numeros) {
+            html += cellule(lot.filter(c => c[CQ.NO_QUEST] === no), true, unite);
+        }
+        html += cellule(lot, true, unite) + `</tr>`;
+    }
+
+    html += `</tbody></table>`;
+    return html;
+}
+
+function rendreQuestions() {
+    const box = $("#questions-box");
+
+    /* Section VISIBLE même sans données : un manque annoncé se corrige, un
+       manque invisible passe pour un bug. Voir detail_meq.lire_table_questions(). */
+    if (!QUESTIONS_DISPONIBLES || !CELLULES_QUESTIONS.length) {
+        box.innerHTML = `<p class="placeholder-text">Les résultats <strong>par question</strong> ne sont pas disponibles&nbsp;: cette base ne contient pas d'export par question.<br><br>
+           Pour les activer, exporter la table <code>MEQ_ParQuestion</code> (une ligne par élève, cours et question, avec les colonnes
+           <code>CD_PERMN, CD_COURS, CD_ORGNS, NO_GROUP_ELEVE, AN_EPREU, SESN_EPREU, TYPE_QUEST, NO_QUEST</code>, et le score sous
+           <code>Score</code> ou <code>RESLT_QUEST</code>)
+           dans <code>Data\\</code>, puis relancer <code>create_sqlite.py</code>.</p>`;
+        return;
+    }
+
+    const m = matiereCourante();
+    let out = "";
+
+    competencesExamen(m).forEach(([code, nomComp], i) => {
+        if (m.exam.length > 1) out += sousTitreCompetence(nomComp, i === 0);
+        const cel = selectionQuestions(code);
+        if (!cel.length) {
+            /* Distinguer « cette année n'a pas de données par question » de
+               « cette sélection est vide » : l'export par question ne couvre
+               pas les mêmes années que le reste du rapport, et sans cette
+               précision une année sans données passe pour un filtre trop
+               étroit — ou pour une panne. */
+            const dispo = [...new Set(CELLULES_QUESTIONS
+                .filter(c => c[CQ.CD_COURS] === code).map(c => c[CQ.ANNEE]))].sort();
+            out += dispo.length && !dispo.includes(state.annee)
+                ? `<p class="section-vide">Aucune donnée par question pour ${esc(state.annee)}–${esc(state.annee + 1)}. Années disponibles pour cette matière&nbsp;: ${dispo.map(a => `${a}–${a + 1}`).join(", ")}.</p>`
+                : `<p class="section-vide">Aucune donnée par question pour cette sélection.</p>`;
+            return;
+        }
+
+        /* Export enseignant : le __NOM_CSS__ comme seul repère, comme rendreGroupes(). */
+        const refs = [referenceQuestions(code)];
+        if (EXPORT_ENS) refs.push({
+            cellules: CELLULES_QUESTIONS.filter(
+                c => c[CQ.ANNEE] === state.annee && c[CQ.CD_COURS] === code),
+            nom: "__NOM_CSS__",
+        });
+
+        /* Une section par type de question — l'ordre et les libellés viennent
+           de TYPES_QUESTION, les types inconnus passent en fin de liste. */
+        const types = [...new Set(cel.map(c => c[CQ.TYPE_QUEST]))].sort((a, b) => {
+            const ia = infoType(a), ib = infoType(b);
+            return ia.rang - ib.rang || String(a).localeCompare(String(b), "fr");
+        });
+
+        for (const t of types) {
+            const lot = cel.filter(c => c[CQ.TYPE_QUEST] === t);
+            /* Le barème varie d'un type à l'autre (4 pour les choix multiples
+               et les réponses courtes, 100 pour le développement) : sans lui,
+               « 75 » ne dit pas sur quoi. Affiché seulement s'il est le même
+               pour toutes les questions du type — sinon il est déjà dans
+               l'infobulle de chaque case. */
+            const baremes = [...new Set(lot.map(c => c[CQ.SCORE_MAX]))];
+            const surN = baremes.length === 1
+                ? ` <span class="cible">(chaque question notée sur ${fmt(baremes[0], 0)})</span>` : "";
+            out += `<h3 style="margin:1.1rem 0 .4rem;font-size:1rem;color:#2d3748;">${esc(infoType(t).nom)}${surN}</h3>`;
+            out += tableauQuestions(lot, refs.filter(Boolean).map(r => ({
+                nom: r.nom, cellules: r.cellules.filter(c => c[CQ.TYPE_QUEST] === t),
+            })));
+        }
+    });
+
+    out += `<div class="legende">
+        <span><i style="background:rgb(${teinteReussite(30)})"></i> faible</span>
+        <span><i style="background:rgb(${teinteReussite(SEUIL_PASSAGE)})"></i> ${SEUIL_PASSAGE} %</span>
+        <span><i style="background:rgb(${teinteReussite(100)})"></i> fort</span>
+        <span>Chaque case&nbsp;: score moyen de la question rapporté à son barème, et le nombre de réponses. Une case en italique porte moins de ${N_MIN} réponses. La colonne « Ensemble » agrège toutes les questions du type.</span>
+        ${PERM_PAR_CLE.size ? `<span><i style="box-shadow:inset 0 0 0 2px #2d3748;background:#fff"></i> ▲ / ▼ écart au __NOM_CSS__ qu'un test de permutation ne met pas sur le compte du hasard (seuil ${fmt(SEUIL_SIGNIF * 100, 0)} %, correction FDR)&nbsp;; p et q en infobulle.</span>` : ""}
+    </div>`;
+
+    box.innerHTML = out;
+}
+
+/* --- Infobulle du nuage par élève ------------------------------------
+   UN seul écouteur, posé une fois sur le conteneur, et UN seul nœud
+   d'infobulle réutilisé : le nuage est redessiné à chaque changement de
+   filtre, donc des écouteurs par point seraient à reposer à chaque fois —
+   pour un millier de points, à chaque changement de menu.
+   ---------------------------------------------------------------------- */
+
+function initInfobulle() {
+    const tip = document.createElement("div");
+    tip.className = "meq-tip";
+    document.body.appendChild(tip);
+    const box = $("#nuage-box");
+
+    /* Position en `fixed` d'après le curseur, rabattue de l'autre côté quand
+       l'infobulle déborderait de la fenêtre — sinon les points du bord droit
+       (notes élevées, ceux qu'on regarde le plus) l'afficheraient hors vue. */
+    const placer = e => {
+        const marge = 14, r = tip.getBoundingClientRect();
+        let x = e.clientX + marge, y = e.clientY + marge;
+        if (x + r.width > window.innerWidth - 8) x = e.clientX - marge - r.width;
+        if (y + r.height > window.innerHeight - 8) y = e.clientY - marge - r.height;
+        tip.style.left = Math.max(4, x) + "px";
+        tip.style.top = Math.max(4, y) + "px";
+    };
+
+    box.addEventListener("pointerover", e => {
+        const pt = e.target.closest && e.target.closest(".nuage-pt");
+        if (!pt) return;
+        const ecole = Number(pt.dataset.e), meq = Number(pt.dataset.q);
+        const ecart = meq - ecole;
+
+        /* Extraire l'école et le numéro de groupe du composite key "ECO|NUM" */
+        let libelleGroupe = pt.dataset.grp;
+        if (pt.dataset.grp.includes("|")) {
+            const [eco, num] = pt.dataset.grp.split("|");
+            const ecoNom = nomEcole(eco);
+            /* Export école : pas de détail par groupe (groupes déjà vidés
+               par export_meq.py). */
+            libelleGroupe = EXPORT_ECOLE ? ecoNom : `${ecoNom} – Groupe ${num}`;
+        }
+
+        tip.innerHTML = `<span class="tip-nom">${esc(pt.dataset.nom)}</span>`
+            + `${esc(libelleGroupe)}<br>`
+            + `Note de l'école&nbsp;: <strong>${pct(ecole)}</strong><br>`
+            + `Épreuve du ministère&nbsp;: <strong>${pct(meq)}</strong><br>`
+            + `<span class="tip-ecart">Écart&nbsp;: ${ecart > 0 ? "+" : ""}${fmt(ecart, 1)} point(s)</span>`;
+        tip.style.display = "block";
+        placer(e);
+    });
+    box.addEventListener("pointermove", e => {
+        if (tip.style.display === "block") placer(e);
+    });
+    box.addEventListener("pointerout", e => {
+        if (e.target.closest && e.target.closest(".nuage-pt")) tip.style.display = "none";
+    });
+    /* Le nuage est redessiné sous le curseur quand un filtre change : sans
+       ceci, l'infobulle du point disparu resterait affichée. */
+    document.addEventListener("scroll", () => { tip.style.display = "none"; }, true);
+}
+
+/* Même mécanisme qu'initInfobulle() ci-dessus (un seul nœud réutilisé, un
+   seul écouteur délégué), pour le nuage de modération — un second nœud
+   plutôt que le même : les deux nuages peuvent être ouverts en même temps
+   (deux <details> distincts) et leurs infobulles portent des champs
+   différents (écart de modération, pas la note d'épreuve). */
+function initInfobulleModeration() {
+    const tip = document.createElement("div");
+    tip.className = "meq-tip";
+    document.body.appendChild(tip);
+    const box = $("#moder-box");
+
+    const placer = e => {
+        const marge = 14, r = tip.getBoundingClientRect();
+        let x = e.clientX + marge, y = e.clientY + marge;
+        if (x + r.width > window.innerWidth - 8) x = e.clientX - marge - r.width;
+        if (y + r.height > window.innerHeight - 8) y = e.clientY - marge - r.height;
+        tip.style.left = Math.max(4, x) + "px";
+        tip.style.top = Math.max(4, y) + "px";
+    };
+
+    box.addEventListener("pointerover", e => {
+        const pt = e.target.closest && e.target.closest(".nuage-pt");
+        if (!pt) return;
+        const brut = Number(pt.dataset.brut), ecart = Number(pt.dataset.ecart);
+        const modr = brut + ecart;
+
+        tip.innerHTML = `<span class="tip-nom">${esc(pt.dataset.nom)}</span>`
+            + `Note de l'école&nbsp;: <strong>${pct(brut)}</strong><br>`
+            + `Note modérée&nbsp;: <strong>${pct(modr)}</strong><br>`
+            + `<span class="tip-ecart">Modération&nbsp;: ${ecart > 0 ? "+" : ""}${fmt(ecart, 1)} point(s)</span>`;
+        tip.style.display = "block";
+        placer(e);
+    });
+    box.addEventListener("pointermove", e => {
+        if (tip.style.display === "block") placer(e);
+    });
+    box.addEventListener("pointerout", e => {
+        if (e.target.closest && e.target.closest(".nuage-pt")) tip.style.display = "none";
+    });
+    document.addEventListener("scroll", () => { tip.style.display = "none"; }, true);
+}
+
+/* ---------------------------------------------------------------------
+   Orchestration
+   --------------------------------------------------------------------- */
+
+/* Sections applicables à la vue courante. Retirer une section qui n'a pas de
+   sens ici est différent de l'afficher vide : le message « aucune donnée »
+   reste réservé aux cas où la section s'applique mais la sélection est
+   pauvre. */
+const APPLICABLE = {
+    "sec-groupes": () => !EXPORT_ECOLE,
+    /* Export : un seul groupe sélectionné (vue « Par groupe ») — la moyenne
+       des transformations de plusieurs groupes ne correspond à la
+       modération réellement appliquée à aucun d'eux. Jamais en export école. */
+    "sec-transfo": st => !EXPORT || (st.vue === "groupe" && !!st.groupe),
+    "sec-moder": st => st.vue !== "cssl" && !EXPORT_ECOLE,
+};
+
+function rendre() {
+    majVisibiliteControles();
+    if (state.vue !== "cssl") majEnseignants();
+    if (state.vue === "groupe") majGroupes();
+
+    for (const [id, test] of Object.entries(APPLICABLE)) {
+        $("#" + id).style.display = test(state) ? "" : "none";
+    }
+    rendreStats();
+    if (APPLICABLE["sec-groupes"](state)) rendreGroupes();
+    rendreTransfo();
+    rendreNuage();
+    if (APPLICABLE["sec-moder"](state)) rendreModeration();
+    /* Appelée ICI et non seulement dans init() : son contenu dépend de la
+       matière, de l'année et de la sélection, exactement comme les autres. */
+    rendreQuestions();
+    if (EXPORT) masquerVides();
+}
+
+/* Export : une section qui n'a rien à montrer (ni tableau ni graphique, que
+   des messages « aucune donnée ») est retirée plutôt qu'affichée vide —
+   sauf l'astuce de la modération (« choisissez la vue Par groupe »), qui dit
+   comment l'obtenir. Réévaluée à chaque rendu : la vue « Par groupe » peut
+   remplir une section que la vue enseignant laissait vide. Même chose pour
+   le bandeau de filtres quand tous ses menus sont masqués. */
+const BOITES = {
+    "sec-stats": "#stats-box", "sec-groupes": "#groupes-box", "sec-nuage": "#nuage-box",
+    "sec-moder": "#moder-box", "sec-questions": "#questions-box", "sec-transfo": "#transfo-box",
+};
+function masquerVides() {
+    for (const [id, boite] of Object.entries(BOITES)) {
+        const applicable = APPLICABLE[id] ? APPLICABLE[id](state) : true;
+        const b = $(boite);
+        const contenu = b.querySelector("table, svg, .section-astuce");
+        $("#" + id).style.display = applicable && contenu ? "" : "none";
+    }
+    const barre = $("#meq-filters-sticky");
+    const items = [...barre.querySelectorAll(".global-filter-item")];
+    barre.style.display = items.some(i => i.style.display !== "none") ? "" : "none";
+}
+
+/* Export : école (et enseignant) figés, vues restreintes. Export enseignant :
+   « Par enseignant » et « Par groupe » (ses groupes, voir majGroupes()), sans
+   bascule groupe 85 — ce groupe n'a pas d'enseignant. Export école : vue
+   « Une école » seule, menu masqué. */
+function initExport() {
+    document.documentElement.classList.add("meq-export");
+    /* Fichier remis : tout déroulé d'emblée, sauf les notes méthodologiques. */
+    document.querySelectorAll("details.panel:not(#sec-notes)").forEach(d => { d.open = true; });
+    state.ecole = EXPORT.ecole;
+    state.vue = EXPORT_ENS ? "enseignant" : "ecole";
+    state.enseignant = EXPORT.enseignant || "";
+    const vues = EXPORT_ENS ? ["enseignant", "groupe"] : ["ecole"];
+    const selVue = $("#f-vue");
+    for (const o of [...selVue.options]) if (!vues.includes(o.value)) o.remove();
+    selVue.value = state.vue;
+    const masquer = sel => { $(sel).closest(".global-filter-item, label").style.display = "none"; };
+    /* Une seule matière et une seule année par fichier : déjà dans le titre. */
+    masquer("#f-matiere");
+    masquer("#f-annee");
+    if (EXPORT_ECOLE) masquer("#f-vue");
+    /* Bascules sans effet sur ce fichier (aucun élève du groupe 85, aucun
+       absent) : export_meq.py le sait, le payload étant déjà réduit. */
+    if (EXPORT_ENS || !EXPORT.g85) masquer("#toggle-groupe-85");
+    if (!EXPORT.absents) masquer("#toggle-absents");
+    /* Textes qui décrivent le repère « Reste de l'école », absent de l'export
+       enseignant (voir reference()). */
+    if (EXPORT_ENS) {
+        $("#lede-repere").textContent = "La ligne de repère porte l'ensemble du __NOM_CSS__.";
+        $("#note-vue-enseignant").style.display = "none";
+        document.querySelectorAll(".note-reste").forEach(e => { e.style.display = "none"; });
+    }
+}
+
+function init() {
+    if (EXPORT) initExport();
+    remplirSelect($("#f-matiere"), MATIERES.map(m => ({ v: m.cle, l: m.nom })), state.matiere);
+    remplirSelect($("#f-annee"), ANNEES.map(a => ({ v: a, l: `${a}–${a + 1}` })), state.annee);
+    remplirSelect($("#f-ecole"), ECOLES.map(e => ({ v: e.id, l: nomEcole(e.id) })), state.ecole);
+
+    $("#f-matiere").addEventListener("change", e => { state.matiere = e.target.value; rendre(); });
+    $("#f-annee").addEventListener("change", e => { state.annee = Number(e.target.value); rendre(); });
+    $("#f-vue").addEventListener("change", e => { state.vue = e.target.value; rendre(); });
+    $("#f-ecole").addEventListener("change", e => { state.ecole = Number(e.target.value); rendre(); });
+    $("#f-groupe").addEventListener("change", e => { state.groupe = e.target.value; rendre(); });
+    $("#f-enseignant").addEventListener("change", e => { state.enseignant = e.target.value; rendre(); });
+
+    initInfobulle();
+    initInfobulleModeration();
+
+    const chkGroupe85 = document.getElementById("toggle-groupe-85");
+    if (chkGroupe85) {
+        chkGroupe85.addEventListener("change", () => {
+            CELLULES = chkGroupe85.checked ? CELLULES_AVEC_G85 : CELLULES_SANS_G85;
+            CELLULES_QUESTIONS = chkGroupe85.checked ? CELLULES_QUESTIONS_AVEC_G85 : CELLULES_QUESTIONS_SANS_G85;
+            rendre();
+        });
+    }
+
+    const chkAbsents = document.getElementById("toggle-absents");
+    if (chkAbsents) {
+        chkAbsents.addEventListener("change", () => {
+            state.retirerAbsents = chkAbsents.checked;
+            rendre();
+        });
+    }
+
+    rendre();
+}
+
+/* Les deux variantes sont testées, pas seulement CELLULES (sans groupe 85,
+   le point de départ) : une base où TOUTES les cellules MEQ viennent
+   d'élèves du groupe 85 resterait sinon bloquée sur le message d'absence,
+   la case à cocher n'ayant jamais reçu son écouteur. */
+if (!CELLULES_SANS_G85.length && !CELLULES_AVEC_G85.length) {
+    document.querySelector("#meq-contexte").textContent =
+        "Aucune donnée d'épreuve ministérielle dans cette base.";
+} else {
+    init();
+}
+</script>
+<script>window.EXPORT_CIBLES = ".chart-wrap";</script>
+<script>
+__EXPORT_JS__
+</script>
+</body>
+</html>

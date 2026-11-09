@@ -1,0 +1,16 @@
+# Donnees et rapports : ne jamais versionner
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+*.html
+*.db
+Rapports_MEQ_*/
+
+# Fichiers du depot qui portent ces extensions
+!exemple/exemple_*.xlsx
+!meq/assets/gabarit.html
+
+.venv/
+__pycache__/
+*.pyc
