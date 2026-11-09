@@ -13,8 +13,11 @@ from .lecture import Analyse
 from .rapport import MATIERES
 from .reduction import (
     I,
+    IP,
+    IQ,
     Contexte,
     a_absents,
+    codes_matiere,
     differe_g85,
     enseignants_par_cellule,
     nom_fichier,
@@ -40,6 +43,7 @@ class Parametres:
     enseignants: dict = field(default_factory=dict)   # {(eco, cle de matiere, groupe): "A; B"}
     inclure_noms: bool = False
     niveaux: set = field(default_factory=lambda: {"css", "ecole", "prof"})
+    cours: set | None = None                          # codes de cours retenus ; None = tous
 
 
 @dataclass
@@ -65,7 +69,8 @@ def groupes_a_attribuer(analyse: Analyse, prefixe: str, noms_ecoles: dict | None
     groupes: dict[tuple, int] = defaultdict(int)
     for l in lignes:
         m = _matiere_du_parent(l["COURS_PARENT"])
-        if (m and l["ANNEE"] == annee and l["CD_COURS"] != m["parent"]
+        # Un cours sans competences (histoire) porte ses groupes sur son propre code.
+        if (m and l["ANNEE"] == annee and (l["CD_COURS"] != m["parent"] or not m["competences"])
                 and l["GROUPE"] != "(sans groupe)"):
             cle = (l["ECO"], m["cle"], l["GROUPE"])
             groupes[cle] = max(groupes[cle], l["N_FINAL"] or 0)
@@ -88,6 +93,32 @@ def ecoles_presentes(analyse: Analyse, prefixe: str) -> list[int]:
     return sorted(ecoles)
 
 
+def cours_presents(analyse: Analyse, prefixe: str) -> list[str]:
+    """Codes de cours ayant des resultats pour ce prefixe, dans l'ordre des matieres."""
+    calculs.CTX.__init__(prefixe_organisme=prefixe)
+    presents = set()
+    for code, orgns in analyse.conn.execute("SELECT DISTINCT CD_COURS, CD_ORGNS FROM MEQ"):
+        if calculs.eco_de_organisme(orgns) is not None:
+            presents.add(calculs.PARENT_DE_COMPETENCE.get(code, code))
+    return [m["parent"] for m in MATIERES if m["parent"] in presents]
+
+
+def _restreindre(payload: dict, matieres: list) -> dict:
+    """Le payload limite aux matieres choisies."""
+    codes = set().union(*(codes_matiere(m) for m in matieres))
+    cellules = [c for c in payload["cellules"] if c[I["CD_COURS"]] in codes]
+    ecoles_gardees = {c[I["ECO"]] for c in cellules}
+    return dict(
+        payload,
+        cellules=cellules,
+        cellules_questions=[c for c in payload["cellules_questions"] if c[IQ["CD_COURS"]] in codes],
+        cellules_perm=[c for c in payload["cellules_perm"] if c[IP["CD_COURS"]] in codes],
+        ecoles=[e for e in payload["ecoles"] if e["id"] in ecoles_gardees],
+        annees=sorted({c[I["ANNEE"]] for c in cellules}),
+        matieres=matieres,
+    )
+
+
 def _table_enseignants(p: Parametres, annee: int) -> dict:
     """Correspondance saisie -> {(eco, annee, parent, groupe): [(id, nom), ...]}."""
     parent_de = {m["cle"]: m["parent"] for m in MATIERES}
@@ -95,7 +126,7 @@ def _table_enseignants(p: Parametres, annee: int) -> dict:
     table: dict[tuple, list] = {}
     for (eco, cle, groupe), noms in p.enseignants.items():
         personnes = []
-        for nom in (n.strip() for n in re.split(r"[;,]", noms or "")):
+        for nom in (n.strip() for n in (noms or "").split(";")):
             if nom:
                 ident = ids.setdefault((eco, nom.casefold()), f"E{len(ids) + 1}")
                 personnes.append((ident, nom))
@@ -127,6 +158,10 @@ def generer(analyse: Analyse, p: Parametres) -> Resultat:
                          inclure_noms=p.inclure_noms)
     for m in MATIERES:
         m["pevr"] = p.cibles.get(m["cle"])
+    choisies = [m for m in MATIERES if p.cours is None or m["parent"] in p.cours]
+    if not choisies:
+        raise ValueError("Aucun code de cours sélectionné.")
+    codes_choisis = set().union(*(codes_matiere(m) for m in choisies))
 
     conn = analyse.conn
     lignes = calculs.aggreger_detail(conn)
@@ -138,11 +173,18 @@ def generer(analyse: Analyse, p: Parametres) -> Resultat:
     perms = []
     if ens and prep and ({"css", "prof"} & p.niveaux):
         print("Test de permutation par enseignant (peut prendre une minute)…")
-        perms = calculs.aggreger_permutations(conn, prep=prep)
+        # Les eleves ne se permutent qu'a l'interieur d'une epreuve : retirer les
+        # autres cours ne change aucun p.
+        perms = calculs.aggreger_permutations(conn, prep=prep._replace(
+            lignes=[(l, c) for l, c in prep.lignes if l.cd_cours in codes_choisis]))
 
     payload = rapport.build_payloads(lignes, questions, perms)
     payload_g85 = rapport.build_payloads(lignes_g85, questions_g85, perms)
     annee = max(payload["annees"])
+    payload = _restreindre(payload, choisies)
+    payload_g85 = _restreindre(payload_g85, choisies)
+    if not payload["cellules"]:
+        raise ValueError("Aucun résultat pour les codes de cours sélectionnés.")
     porteurs, noms_ens = enseignants_par_cellule(lignes + lignes_g85, annee)
     ctx = Contexte(payload, porteurs, noms_ens, annee)
     ctx_g85 = Contexte(payload_g85, porteurs, noms_ens, annee)
@@ -150,7 +192,7 @@ def generer(analyse: Analyse, p: Parametres) -> Resultat:
     tous_ens = set(noms_ens.values())
 
     res = Resultat(racine=p.dossier / f"Rapports_MEQ_{annee}-{annee + 1}")
-    communs = {"questions_disponibles": bool(questions), "nom_css": p.nom_css,
+    communs = {"questions_disponibles": bool(payload["cellules_questions"]), "nom_css": p.nom_css,
                "groupes_exclus": p.groupes_exclus}
 
     def ecrire(chemin: Path, red: dict, red_g85: dict, export: dict | None, permis_ens: set) -> None:
@@ -180,7 +222,7 @@ def generer(analyse: Analyse, p: Parametres) -> Resultat:
     if {"ecole", "prof"} & p.niveaux:
         for e in payload["ecoles"]:
             eco, nom_eco = e["id"], e["nom"]
-            for m in MATIERES:
+            for m in choisies:
                 cel, _ = ctx._du_cours(m)
                 if not any(c[I["ECO"]] == eco for c in cel):
                     continue

@@ -210,7 +210,7 @@ class Contexte:
         return sorted(
             (c[I["CD_COURS"]], c[I["GROUPE"]], c[I["N_FINAL"]] or 0)
             for c in cel
-            if c[I["ECO"]] == eco and c[I["CD_COURS"]] != m["parent"]
+            if c[I["ECO"]] == eco and (c[I["CD_COURS"]] != m["parent"] or not m["competences"])
             and not any(self.noms_ens.get((eco, i))
                         for i in self._porteurs(eco, c[I["CD_COURS"]], c[I["GROUPE"]])))
 

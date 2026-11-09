@@ -11,9 +11,12 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
+from meq.enseignants import creer_modele, lire_modele
 from meq.generation import (
     MOTIF_NOM_CSS,
+    NOMS_COURTS,
     Parametres,
+    cours_presents,
     ecoles_presentes,
     generer,
     groupes_a_attribuer,
@@ -23,6 +26,7 @@ from meq.rapport import MATIERES
 
 # Aucune donnee nominative ici : ni eleve, ni enseignant.
 FICHIER_PARAMETRES = Path.home() / ".generateur_meq.json"
+CLE_DU_COURS = {m["parent"]: m["cle"] for m in MATIERES}
 
 
 class VersFile:
@@ -182,6 +186,7 @@ class Application(tk.Tk):
         for eco in ecoles_presentes(self.analyse, self._prefixe_actuel()):
             self.arbre_ecoles.insert("", "end", values=(eco, memo.get(str(eco), f"École {eco}")))
         self._remplir_enseignants()
+        self._remplir_cours()
 
     def _nommer_ecole(self, _e):
         i = self.arbre_ecoles.focus()
@@ -211,8 +216,10 @@ class Application(tk.Tk):
         barre.pack(side="right", fill="y")
         self.arbre.pack(fill="both", expand=True, pady=6)
         self.arbre.bind("<Double-1>", self._nommer_enseignant)
-        ttk.Button(bas, text="Importer un CSV…", command=self._importer).pack(side="left")
-        ttk.Button(bas, text="Exporter en CSV…", command=self._exporter).pack(side="left", padx=4)
+        ttk.Button(bas, text="Créer le modèle Excel…", command=self._creer_modele).pack(side="left")
+        ttk.Button(bas, text="Importer le fichier Excel…", command=self._importer_excel).pack(side="left", padx=4)
+        ttk.Button(bas, text="Exporter en CSV…", command=self._exporter).pack(side="right")
+        ttk.Button(bas, text="Importer un CSV…", command=self._importer).pack(side="right", padx=4)
         self.lignes_ens = {}
 
     def _remplir_enseignants(self):
@@ -238,6 +245,38 @@ class Application(tk.Tk):
                                          initialvalue=self.arbre.set(i, "enseignant"))
             if nom is not None:
                 self.arbre.set(i, "enseignant", nom.strip())
+
+    def _creer_modele(self):
+        chemin = filedialog.asksaveasfilename(defaultextension=".xlsx", initialfile="modele_enseignants.xlsx",
+                                              filetypes=[("Classeur Excel", "*.xlsx")])
+        if not chemin:
+            return
+        existants = {k: self.arbre.set(i, "enseignant") for k, i in self.lignes_ens.items()}
+        try:
+            creer_modele(chemin, list(self.lignes_ens), self._noms_ecoles(), existants)
+        except OSError:
+            messagebox.showerror("Modèle", "Écriture impossible. Le fichier est peut-être ouvert dans Excel.")
+            return
+        messagebox.showinfo("Modèle", f"Modèle créé avec {len(self.lignes_ens)} groupe(s). "
+                                      "Remplissez la colonne Enseignant(s), puis importez-le.")
+
+    def _importer_excel(self):
+        chemin = filedialog.askopenfilename(filetypes=[("Classeurs Excel", "*.xlsx *.xlsm")])
+        if not chemin:
+            return
+        try:
+            trouves, ignorees = lire_modele(chemin, set(self.lignes_ens), self._noms_ecoles())
+        except ErreurLecture as e:
+            messagebox.showerror("Import", str(e))
+            return
+        for cle, noms in trouves.items():
+            self.arbre.set(self.lignes_ens[cle], "enseignant", noms)
+        message = f"{len(trouves)} groupe(s) mis à jour."
+        if ignorees:
+            message += f"\n\n{len(ignorees)} ligne(s) ignorée(s) :\n" + "\n".join(ignorees[:12])
+            if len(ignorees) > 12:
+                message += "\n…"
+        messagebox.showinfo("Import", message)
 
     def _importer(self):
         chemin = filedialog.askopenfilename(filetypes=[("CSV", "*.csv")])
@@ -284,13 +323,37 @@ class Application(tk.Tk):
                            ("ecole", "École (par matière)"), ("prof", "Enseignant (par matière)")):
             self.vars_niveaux[cle] = tk.BooleanVar(value=True)
             ttk.Checkbutton(n, text=texte, variable=self.vars_niveaux[cle]).pack(side="left", padx=(0, 14))
+        self.cadre_cours = ttk.LabelFrame(f, text="Codes de cours à inclure", padding=6)
+        self.cadre_cours.pack(fill="x", pady=(0, 8))
+        self.vars_cours = {}
+
         self.var_noms = tk.BooleanVar(value=False)
         ttk.Checkbutton(f, text="Inclure les noms d'élèves dans les rapports école et enseignant",
                         variable=self.var_noms).pack(anchor="w")
         self.btn_generer = ttk.Button(f, text="Générer les rapports", command=self._generer)
         self.btn_generer.pack(anchor="e", pady=6)
-        self.journal = tk.Text(f, height=16, state="disabled", wrap="word")
+        self.journal = tk.Text(f, height=8, state="disabled", wrap="word")
         self.journal.pack(fill="both", expand=True)
+
+    def _remplir_cours(self):
+        """Une case par code de cours present ; les choix deja faits sont conserves."""
+        anciens = {code: var.get() for code, var in self.vars_cours.items()}
+        for enfant in self.cadre_cours.winfo_children():
+            enfant.destroy()
+        self.vars_cours = {}
+        for n, code in enumerate(cours_presents(self.analyse, self._prefixe_actuel())):
+            self.vars_cours[code] = tk.BooleanVar(value=anciens.get(code, True))
+            ttk.Checkbutton(self.cadre_cours, text=f"{code}  {NOMS_COURTS[CLE_DU_COURS[code]]}",
+                            variable=self.vars_cours[code]).grid(row=n // 4, column=n % 4, sticky="w", padx=(0, 18))
+        boutons = ttk.Frame(self.cadre_cours)
+        boutons.grid(row=99, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        ttk.Button(boutons, text="Tout cocher", command=lambda: self._cocher_cours(True)).pack(side="left")
+        ttk.Button(boutons, text="Tout décocher",
+                   command=lambda: self._cocher_cours(False)).pack(side="left", padx=4)
+
+    def _cocher_cours(self, valeur):
+        for var in self.vars_cours.values():
+            var.set(valeur)
 
     def _choisir_dossier(self):
         d = filedialog.askdirectory()
@@ -310,6 +373,10 @@ class Application(tk.Tk):
         if not niveaux:
             messagebox.showerror("Sortie", "Cochez au moins un type de rapport.")
             return None
+        cours = {code for code, var in self.vars_cours.items() if var.get()}
+        if not cours:
+            messagebox.showerror("Sortie", "Cochez au moins un code de cours.")
+            return None
         cibles = {}
         for cle, var in self.vars_cibles.items():
             texte = var.get().strip().replace(",", ".")
@@ -325,7 +392,8 @@ class Application(tk.Tk):
         return Parametres(nom_css=nom, prefixe=self._prefixe_actuel(),
                           dossier=Path(self.var_dossier.get().strip()),
                           noms_ecoles=self._noms_ecoles(), groupes_exclus=groupes, cibles=cibles,
-                          enseignants=enseignants, inclure_noms=self.var_noms.get(), niveaux=niveaux)
+                          enseignants=enseignants, inclure_noms=self.var_noms.get(), niveaux=niveaux,
+                          cours=cours)
 
     def _generer(self):
         p = self._parametres()

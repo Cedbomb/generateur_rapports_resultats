@@ -13,10 +13,12 @@ sys.path.insert(0, str(RACINE))
 sys.path.insert(0, str(RACINE / "exemple"))
 
 import generer_exemple  # noqa: E402
+import openpyxl  # noqa: E402
 from msoffcrypto.format.ooxml import OOXMLFile  # noqa: E402
 
 from meq import calculs  # noqa: E402
-from meq.generation import Parametres, generer, groupes_a_attribuer  # noqa: E402
+from meq.enseignants import creer_modele, lire_modele  # noqa: E402
+from meq.generation import Parametres, cours_presents, generer, groupes_a_attribuer  # noqa: E402
 from meq.lecture import ErreurLecture, charger_fichiers  # noqa: E402
 
 
@@ -91,6 +93,86 @@ class TestLecture(Base):
             charger_fichiers([chiffre], "")
 
 
+class TestModeleEnseignants(unittest.TestCase):
+    GROUPES = [(1, "st", "41"), (1, "st", "42"), (2, "cst", "43")]
+    ECOLES = {1: "École Alpha", 2: "École Bêta"}
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.chemin = Path(self._tmp.name) / "modele.xlsx"
+        self.addCleanup(self._tmp.cleanup)
+
+    def lire(self):
+        return lire_modele(self.chemin, set(self.GROUPES), self.ECOLES)
+
+    def remplir(self, lignes):
+        wb = openpyxl.load_workbook(self.chemin)
+        ws = wb["Enseignants"]
+        for ligne in lignes:
+            ws.append(ligne)
+        wb.save(self.chemin)
+
+    def test_modele_prerempli(self):
+        creer_modele(self.chemin, self.GROUPES, self.ECOLES, {(1, "st", "42"): "Bo T."})
+        ws = openpyxl.load_workbook(self.chemin)["Enseignants"]
+        self.assertEqual([c.value for c in ws[2]][:4], [1, "École Alpha", "055444", 41])
+        self.assertEqual(ws["C2"].number_format, "@")
+        self.assertEqual(self.lire(), ({(1, "st", "42"): "Bo T."}, []))
+
+    def test_codes_de_cours(self):
+        creer_modele(self.chemin)
+        self.remplir([[1, None, "055444", 41, "Ana P."],      # code du cours
+                       [1, None, 55444, 42, "Bo T."],         # zero initial perdu par Excel
+                       [2, None, "063420", 43, "Cy R."]])     # code de competence
+        self.assertEqual(self.lire(), ({(1, "st", "41"): "Ana P.", (1, "st", "42"): "Bo T.",
+                                        (2, "cst", "43"): "Cy R."}, []))
+
+    def test_validation_matiere_et_onglet_liste(self):
+        creer_modele(self.chemin)
+        wb = openpyxl.load_workbook(self.chemin)
+        self.assertEqual(wb["Listes"].sheet_state, "hidden")
+        self.assertEqual(len(wb["Enseignants"].data_validations.dataValidation), 1)
+        self.assertEqual(wb["Enseignants"].max_row, 1)
+
+    def test_variantes_de_saisie(self):
+        creer_modele(self.chemin)
+        self.remplir([[1.0, None, "science", 41.0, "Ana P."],
+                       [None, "ecole beta", "Mathématique — CST (4e sec.)", "43", "Bo T.; Cy R."]])
+        trouves, ignorees = self.lire()
+        self.assertEqual(trouves, {(1, "st", "41"): "Ana P.", (2, "cst", "43"): "Bo T.; Cy R."})
+        self.assertEqual(ignorees, [])
+
+    def test_virgule_dans_un_nom(self):
+        creer_modele(self.chemin)
+        self.remplir([[1, None, "Science", 41, "Tremblay, Ana"]])
+        self.assertEqual(self.lire()[0], {(1, "st", "41"): "Tremblay, Ana"})
+
+    def test_co_enseignement_sur_deux_lignes(self):
+        creer_modele(self.chemin)
+        self.remplir([[1, None, "Science", 41, "Ana P."], [1, None, "Science", 41, "Bo T."],
+                      [1, None, "Science", 41, "ana p."]])
+        self.assertEqual(self.lire()[0], {(1, "st", "41"): "Ana P.; Bo T."})
+
+    def test_lignes_ignorees_sans_nom_dans_le_motif(self):
+        creer_modele(self.chemin)
+        self.remplir([[9, None, "Science", 41, "Ana P."], [1, None, "Latin", 41, "Bo T."],
+                      [None, "Inconnue", "Science", 41, "Cy R."], [1, None, "Science", 99, "Di S."],
+                      [1, None, "Science", 42, None]])
+        trouves, ignorees = self.lire()
+        self.assertEqual(trouves, {})
+        self.assertEqual(len(ignorees), 4)
+        self.assertTrue(ignorees[0].startswith("Ligne 2 "), ignorees[0])
+        for nom in ("Ana", "Bo T", "Cy R", "Di S"):
+            self.assertNotIn(nom, " ".join(ignorees))
+
+    def test_fichier_sans_les_colonnes(self):
+        wb = openpyxl.Workbook()
+        wb.active.append(["Nom", "Age"])
+        wb.save(self.chemin)
+        with self.assertRaises(ErreurLecture):
+            self.lire()
+
+
 class TestRapports(Base):
     def html(self, racine):
         return {p.name: p.read_text(encoding="utf-8") for p in racine.rglob("*.html")}
@@ -106,6 +188,48 @@ class TestRapports(Base):
     def test_niveaux_demandes(self):
         r = self.produire("css", niveaux={"css"})
         self.assertEqual(list(self.html(r.racine)), ["Rapport CSS Test.html"])
+
+    def test_histoire_a_ses_groupes_et_ses_enseignants(self):
+        _annee, groupes = groupes_a_attribuer(self.analyse, "999")
+        self.assertEqual({g["cle"] for g in groupes},
+                         {"cst", "sn", "st", "histoire", "francais", "anglais"})
+        self.assertEqual(len(groupes), 36)
+        p = Parametres(nom_css="CSS Test", prefixe="999", dossier=self.tmp / "histoire",
+                       enseignants={(1, "histoire", "41"): "Ana P."}, niveaux={"prof"}, cours={"085404"})
+        with silence():
+            r = generer(self.analyse, p)
+        self.assertEqual(r.fuites, [])
+        self.assertIn("Histoire - Ana P.html", self.html(r.racine))
+        self.assertEqual(sorted((s[0], s[3]) for s in r.sans_enseignant),
+                         [("École 1", "42"), ("École 1", "43"),
+                          ("École 2", "41"), ("École 2", "42"), ("École 2", "43")])
+
+    def test_selection_de_cours(self):
+        r = self.produire("selection", cours={"055444"})
+        fichiers = self.html(r.racine)
+        self.assertIn("Science - Ana P.html", fichiers)
+        self.assertEqual({n for n in fichiers if n != "Rapport CSS Test.html" and not n.startswith("Science")}, set())
+        css = fichiers["Rapport CSS Test.html"]
+        self.assertRegex(css, r'"parent":\s*"055444"')
+        self.assertNotRegex(css, r'"parent":\s*"063414"')
+        self.assertNotIn('"063420"', css)
+
+    def test_selection_sans_resultat(self):
+        with self.assertRaises(ValueError):
+            self.produire("vide", cours={"064426"})
+        with self.assertRaises(ValueError):
+            self.produire("rien", cours=set())
+
+    def test_cours_presents(self):
+        self.assertEqual(cours_presents(self.analyse, "999"),
+                         ["063414", "065426", "055444", "085404", "132506", "134504"])
+
+    def test_selection_ne_change_pas_les_chiffres(self):
+        extraire = lambda h: re.search(r"const CELLULES_SANS_G85 = (\[.*?\]);\n", h, re.S)
+        ens = {"niveaux": {"ecole"}}
+        tout = self.html(self.produire("tout", **ens).racine)["Science - École.html"]
+        seul = self.html(self.produire("seul", cours={"055444"}, **ens).racine)["Science - École.html"]
+        self.assertEqual(re.sub(r"\d{4}-\d\d-\d\d \d\d:\d\d", "", tout), re.sub(r"\d{4}-\d\d-\d\d \d\d:\d\d", "", seul))
 
     def test_confidentialite_avec_noms(self):
         r = self.produire("noms", inclure_noms=True)

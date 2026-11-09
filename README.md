@@ -40,8 +40,14 @@ chaque onglet à ses colonnes. Plusieurs fichiers et plusieurs années peuvent �
 2. **Paramètres :** vérifiez le préfixe d'organisme, nommez le centre et les écoles, indiquez au
    besoin les groupes à exclure et vos cibles PEVR.
 3. **Enseignants :** Charlemagne ne fournit pas les enseignants. Associez-les aux groupes de la
-   dernière année, directement ou par CSV (colonnes `ecole;matiere;groupe;enseignant`).
-4. **Générer :** choisissez le dossier et les rapports à produire.
+   dernière année, de l'une de ces façons :
+   - *Créer le modèle Excel* produit un classeur déjà rempli avec vos écoles, codes de cours et groupes.
+     Complétez la colonne `Enseignant(s)`, puis cliquez sur *Importer le fichier Excel* ;
+   - le modèle vierge [`modele/modele_enseignants.xlsx`](modele/modele_enseignants.xlsx) permet de
+     préparer la liste d'avance ;
+   - un double-clic sur un groupe, ou un CSV (colonnes `ecole;matiere;groupe;enseignant`).
+4. **Générer :** choisissez le dossier, les rapports à produire et les codes de cours à inclure.
+   La sélection s'applique aux trois types de rapports.
 
 Sortie :
 
@@ -67,7 +73,8 @@ Les classeurs contiennent des renseignements personnels sur des élèves.
 - **Le rapport du centre de services nomme les enseignants** et compare groupes et écoles : réservez-le
   aux personnes autorisées.
 - Le fichier `~/.generateur_meq.json` mémorise les paramètres (noms d'écoles, cibles), sans donnée
-  sur les élèves ni les enseignants. Une liste exportée en CSV contient des noms d'enseignants.
+  sur les élèves ni les enseignants. Une liste d'enseignants remplie, en Excel ou en CSV, contient
+  leurs noms.
 
 Ne déposez jamais de vrais classeurs ou rapports dans ce dépôt.
 

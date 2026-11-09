@@ -9,6 +9,7 @@ Rapports_MEQ_*/
 
 # Fichiers du depot qui portent ces extensions
 !exemple/exemple_*.xlsx
+!modele/modele_enseignants.xlsx
 !meq/assets/gabarit.html
 
 .venv/
