@@ -129,9 +129,6 @@ class Application(tk.Tk):
         self.combo_prefixe.set(choix)
         self.var_nom.set(self.memoire.get("nom_css", self.var_nom.get()))
         self.var_groupes.set(self.memoire.get("groupes_exclus", ""))
-        for cle, v in self.memoire.get("cibles", {}).items():
-            if cle in self.vars_cibles:
-                self.vars_cibles[cle].set(v)
         self._prefixe_change()
         for i in (1, 2, 3):
             self.onglets.tab(i, state="normal")
@@ -164,14 +161,6 @@ class Application(tk.Tk):
         self.arbre_ecoles.column("code", width=60, stretch=False)
         self.arbre_ecoles.pack(fill="both", expand=True)
         self.arbre_ecoles.bind("<Double-1>", self._nommer_ecole)
-
-        d = ttk.LabelFrame(b, text="Cibles PEVR, % à 74 et plus (facultatif)", padding=6)
-        d.pack(side="right", fill="y", padx=(8, 0))
-        self.vars_cibles = {}
-        for i, m in enumerate(MATIERES):
-            ttk.Label(d, text=m["nom"]).grid(row=i, column=0, sticky="w")
-            self.vars_cibles[m["cle"]] = tk.StringVar()
-            ttk.Entry(d, textvariable=self.vars_cibles[m["cle"]], width=7).grid(row=i, column=1, padx=4, pady=1)
 
     def _prefixe_actuel(self):
         return self.prefixes.get(self.combo_prefixe.get(), "")
@@ -377,21 +366,12 @@ class Application(tk.Tk):
         if not cours:
             messagebox.showerror("Sortie", "Cochez au moins un code de cours.")
             return None
-        cibles = {}
-        for cle, var in self.vars_cibles.items():
-            texte = var.get().strip().replace(",", ".")
-            if texte:
-                try:
-                    cibles[cle] = float(texte)
-                except ValueError:
-                    messagebox.showerror("Paramètres", f"Cible PEVR invalide : {var.get()}")
-                    return None
-        groupes = {g.strip() for g in self.var_groupes.get().split(",") if g.strip()}
+        groupes ={g.strip() for g in self.var_groupes.get().split(",") if g.strip()}
         enseignants = {k: self.arbre.set(i, "enseignant") for k, i in self.lignes_ens.items()
                        if self.arbre.set(i, "enseignant").strip()}
         return Parametres(nom_css=nom, prefixe=self._prefixe_actuel(),
                           dossier=Path(self.var_dossier.get().strip()),
-                          noms_ecoles=self._noms_ecoles(), groupes_exclus=groupes, cibles=cibles,
+                          noms_ecoles=self._noms_ecoles(), groupes_exclus=groupes,
                           enseignants=enseignants, inclure_noms=self.var_noms.get(), niveaux=niveaux,
                           cours=cours)
 
@@ -479,8 +459,7 @@ class Application(tk.Tk):
     def _enregistrer_parametres(self, p: Parametres):
         self.memoire = {"nom_css": p.nom_css, "prefixe": p.prefixe,
                         "groupes_exclus": ", ".join(sorted(p.groupes_exclus)),
-                        "noms_ecoles": {str(k): v for k, v in p.noms_ecoles.items()},
-                        "cibles": {k: str(v) for k, v in p.cibles.items()}}
+                        "noms_ecoles": {str(k): v for k, v in p.noms_ecoles.items()}}
         with contextlib.suppress(OSError):
             FICHIER_PARAMETRES.write_text(json.dumps(self.memoire, ensure_ascii=False, indent=2),
                                           encoding="utf-8")

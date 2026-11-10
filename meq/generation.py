@@ -39,7 +39,6 @@ class Parametres:
     dossier: Path
     noms_ecoles: dict = field(default_factory=dict)   # {eco: nom}
     groupes_exclus: set = field(default_factory=set)
-    cibles: dict = field(default_factory=dict)        # {cle de matiere: cible PEVR}
     enseignants: dict = field(default_factory=dict)   # {(eco, cle de matiere, groupe): "A; B"}
     inclure_noms: bool = False
     niveaux: set = field(default_factory=lambda: {"css", "ecole", "prof"})
@@ -156,9 +155,7 @@ def generer(analyse: Analyse, p: Parametres) -> Resultat:
     calculs.CTX.__init__(prefixe_organisme=p.prefixe, groupes_exclus=frozenset(p.groupes_exclus),
                          noms_ecoles=p.noms_ecoles, enseignants_groupes=ens,
                          inclure_noms=p.inclure_noms)
-    for m in MATIERES:
-        m["pevr"] = p.cibles.get(m["cle"])
-    choisies = [m for m in MATIERES if p.cours is None or m["parent"] in p.cours]
+    choisies =[m for m in MATIERES if p.cours is None or m["parent"] in p.cours]
     if not choisies:
         raise ValueError("Aucun code de cours sélectionné.")
     codes_choisis = set().union(*(codes_matiere(m) for m in choisies))

@@ -1,5 +1,5 @@
 
-/* Rappel de la cible sous le titre de chaque section PEVR : la métrique
+/* Rappel de la cible sous le titre de chaque section : la métrique
    y est figée (une cible ne chiffre qu'un indicateur), il n'y a donc pas
    de menu « Métrique » pour la nommer. */
 .panel-lede {
@@ -41,7 +41,7 @@
     .subplot-row { grid-template-columns: 1fr; }
 }
 
-/* Objectifs 1 et 2 (français/mathématique, voir PEVR_VIEWS) : contrairement
+/* Objectifs 1 et 2 (français/mathématique) : contrairement
    au classement, la comparaison primaire/secondaire n'y est pas visuelle
    (chaque sous-graphique garde sa propre échelle verticale) — rien ne
    justifie la largeur asymétrique 5fr/2fr taillée pour le nombre d'écoles du

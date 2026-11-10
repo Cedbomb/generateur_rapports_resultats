@@ -184,6 +184,7 @@ class TestRapports(Base):
         self.assertIn("Science - Ana P.html", fichiers)
         for nom, h in fichiers.items():
             self.assertNotRegex(h, r"Fictif\d+|Eleve\d+|TEST\d{8}", nom)
+            self.assertNotRegex(h, r"(?i)pevr", nom)
 
     def test_niveaux_demandes(self):
         r = self.produire("css", niveaux={"css"})
@@ -248,6 +249,13 @@ class TestRapports(Base):
         h = self.html(r.racine)["Rapport CSS Test.html"]
         self.assertEqual(re.findall(r"__[A-Z_]+__", h), [])
         self.assertIn("Inclure les groupes exclus (43)", h)
+
+    def test_zone_sans_risque_a_70(self):
+        r = self.produire("seuil", niveaux={"css"})
+        h = self.html(r.racine)["Rapport CSS Test.html"]
+        self.assertIn("const SEUIL_SANS_RISQUE = 70;", h)
+        self.assertIn("% ≥ 60 et % ≥ 70", h)
+        self.assertNotIn("≥ 74", h)
 
 
 if __name__ == "__main__":

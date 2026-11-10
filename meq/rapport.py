@@ -24,50 +24,50 @@ def safe_json_for_script(data) -> str:
 MATIERES = [
     {
         "cle": "cst", "nom": "Mathématique — CST (4e sec.)",
-        "parent": "063414", "pevr": None,
+        "parent": "063414",
         "competences": [("063410", "Résoudre"), ("063420", "Utiliser")],
         "exam": ["063420"],
     },
     {
         "cle": "sn", "nom": "Mathématique — SN (4e sec.)",
-        "parent": "065426", "pevr": None,
+        "parent": "065426",
         "competences": [("065410", "Résoudre"), ("065420", "Utiliser")],
         "exam": ["065420"],
     },
     {
         "cle": "ts", "nom": "Mathématique — TS (4e sec.)",
-        "parent": "064426", "pevr": None,
+        "parent": "064426",
         "competences": [("064410", "Résoudre"), ("064420", "Utiliser")],
         "exam": ["064420"],
     },
     {
         "cle": "st", "nom": "Science et technologie (4e sec.)",
-        "parent": "055444", "pevr": None,
+        "parent": "055444",
         "competences": [("055410", "Théorie"), ("055420", "Pratique")],
         "exam": ["055410"],
     },
     {
         "cle": "ats", "nom": "Applications technologiques et scientifiques (4e sec.)",
-        "parent": "057416", "pevr": None,
+        "parent": "057416",
         "competences": [("057410", "Théorie"), ("057420", "Pratique")],
         "exam": ["057410"],
     },
     {
         "cle": "histoire", "nom": "Histoire du Québec et du Canada (4e sec.)",
-        "parent": "085404", "pevr": None,
+        "parent": "085404",
         "competences": [],
         "exam": ["085404"],
     },
     {
         "cle": "francais", "nom": "Français, langue d'enseignement (5e sec.)",
-        "parent": "132506", "pevr": None,
+        "parent": "132506",
         "competences": [("132510", "Lire"), ("132520", "Écrire"),
                         ("132530", "Communiquer")],
         "exam": ["132520"],
     },
     {
         "cle": "anglais", "nom": "Anglais, langue seconde (5e sec.)",
-        "parent": "134504", "pevr": None,
+        "parent": "134504",
         "competences": [("134510", "Communiquer"), ("134520", "Comprendre"),
                         ("134530", "Écrire")],
         "exam": ["134510", "134530"],
@@ -78,7 +78,7 @@ MATIERES = [
 SEUIL_PASSAGE = 60
 
 
-SEUIL_SANS_RISQUE = 74
+SEUIL_SANS_RISQUE = 70
 
 
 N_MIN_AFFICHAGE = 5
@@ -237,16 +237,11 @@ def build_html(payloads: dict, questions_disponibles: bool = False,
     """
     payloads_g85 = payloads_g85 or payloads
     lire = lambda nom: (ASSETS / nom).read_text(encoding="utf-8")
-    cibles = [f"{m['nom']} {str(m['pevr']).replace('.', ',')}&nbsp;%"
-              for m in payloads["matieres"] if m.get("pevr") is not None]
-    note_cibles = ("<li>Cibles PEVR « zone sans risque » (% d'élèves à 74&nbsp;% et plus)&nbsp;: "
-                   + _esc_html("; ").join(cibles) + ".</li>") if cibles else ""
     groupes = ", ".join(sorted(groupes_exclus))
 
     html = lire("gabarit.html")
     for cle, valeur in (
         ("__NOM_CSS__", _esc_html(nom_css)),
-        ("__NOTE_CIBLES__", note_cibles),
         ("__GROUPES_EXCLUS__", _esc_html(groupes)),
         ("__STYLE_GROUPES_EXCLUS__", "" if groupes else ' style="display:none"'),
         ("__NOMS_COURTS_JSON__", safe_json_for_script(noms_courts or {})),
@@ -270,6 +265,7 @@ def build_html(payloads: dict, questions_disponibles: bool = False,
         ("__CHAMPS_JSON__", safe_json_for_script(CHAMPS)),
         ("__SEUIL_PASSAGE_JSON__", safe_json_for_script(SEUIL_PASSAGE)),
         ("__SEUIL_SANS_RISQUE_JSON__", safe_json_for_script(SEUIL_SANS_RISQUE)),
+        ("__SEUIL_SANS_RISQUE__", str(SEUIL_SANS_RISQUE)),
         ("__OBJECTIFS_PASSAGE_JSON__", "{}"),
         ("__N_MIN_JSON__", safe_json_for_script(N_MIN_AFFICHAGE)),
         ("__QUESTIONS_JSON__", safe_json_for_script(bool(questions_disponibles))),

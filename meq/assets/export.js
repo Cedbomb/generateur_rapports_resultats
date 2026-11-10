@@ -156,9 +156,9 @@ async function preparerSource(cible) {
    images-là n'auraient plus d'identification du tout.
 
    Le qualificatif du SOUS-GRAPHIQUE (« Primaire » / « Secondaire ») est en
-   revanche conservé, en tête : les deux vues d'une paire du PEVR partagent
+   revanche conservé, en tête : les deux vues d'une paire de vues partagent
    leur titre au fil des filtres au mot près (voir les appels setLiveTitle()
-   des vues PEVR), et rien d'autre ne distinguerait leurs deux images — ni
+   des vues), et rien d'autre ne distinguerait leurs deux images — ni
    leurs deux noms de fichier. Il tombe en revanche avec
    `{ sousTitre: false }` — le cas d'une diapositive PowerPoint qui réunit
    les DEUX sous-graphiques : le qualificatif y est porté par chaque moitié
@@ -197,7 +197,7 @@ function titres(cible, options) {
 }
 
 /* La légende d'un graphique est le premier bloc de légende de SA section —
-   les deux sous-graphiques côte à côte de la page PEVR en partagent une
+   les deux sous-graphiques côte à côte de la page en partagent une
    seule, ce qui est exactement ce qu'on veut dans les deux images.
 
    Les couleurs sont lues dans le style CALCULÉ des clés : fond plein pour
@@ -331,7 +331,7 @@ async function composer(cible, options) {
 }
 
 /* Réunit les sous-graphiques d'une même rangée (.subplot-row : « Primaire »
-   et « Secondaire » du PEVR, nuage + progression du rapport par élève) en UNE
+   et « Secondaire », nuage + progression du rapport par élève) en UNE
    image, chacun à sa place et sous son propre intertitre, comme à l'écran.
    Les deux ne se lisent que l'un par l'autre — même sélection, même légende,
    souvent la même échelle — et les séparer en deux diapositives casserait la
@@ -397,7 +397,7 @@ function composerSource(src, t, items, avecEntete) {
     const mesure = document.createElement("canvas").getContext("2d");
     mesure.font = "12px " + POLICE;
     /* Une entrée de légende plus large que le tracé (un nom d'école long, la
-       mention d'échelle du PEVR) élargit l'image plutôt que d'en déborder.
+       mention d'échelle) élargit l'image plutôt que d'en déborder.
        Les titres, eux, se replient : voir couperTexte(). */
     let largeurContenu = Math.max(src.largeur, LARGEUR_MIN);
     for (const it of items) largeurContenu = Math.max(largeurContenu, largeurItem(mesure, it));
@@ -835,7 +835,7 @@ function propre(texte) {
 }
 
 /* Barres de filtres qui gouvernent un graphique : celle, épinglée, de son
-   groupe (.chart-group) — ou, hors groupe (page PEVR, épreuves, classe),
+   groupe (.chart-group) — ou, hors groupe (épreuves, classe),
    toute barre épinglée visible hors groupe —, plus les menus posés dans sa
    propre section (Cours, Année, Résultat…).
 

@@ -38,7 +38,7 @@ chaque onglet à ses colonnes. Plusieurs fichiers et plusieurs années peuvent �
 1. **Fichiers :** ajoutez les classeurs, indiquez leur mot de passe s'il y a lieu, puis cliquez sur
    *Analyser*.
 2. **Paramètres :** vérifiez le préfixe d'organisme, nommez le centre et les écoles, indiquez au
-   besoin les groupes à exclure et vos cibles PEVR.
+   besoin les groupes à exclure.
 3. **Enseignants :** Charlemagne ne fournit pas les enseignants. Associez-les aux groupes de la
    dernière année, de l'une de ces façons :
    - *Créer le modèle Excel* produit un classeur déjà rempli avec vos écoles, codes de cours et groupes.
@@ -72,7 +72,7 @@ Les classeurs contiennent des renseignements personnels sur des élèves.
   vérifié, et n'est pas écrit si un nom ou un code permanent s'y trouve à tort.
 - **Le rapport du centre de services nomme les enseignants** et compare groupes et écoles : réservez-le
   aux personnes autorisées.
-- Le fichier `~/.generateur_meq.json` mémorise les paramètres (noms d'écoles, cibles), sans donnée
+- Le fichier `~/.generateur_meq.json` mémorise les paramètres (noms d'écoles, etc.), sans donnée
   sur les élèves ni les enseignants. Une liste d'enseignants remplie, en Excel ou en CSV, contient
   leurs noms.
 

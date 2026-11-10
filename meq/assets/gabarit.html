@@ -147,7 +147,7 @@ __CSS_PARTAGE__
     width: 100%;
     table-layout: fixed;
 }
-/* 17 colonnes (4 sources de note × moyenne/≥60/≥74, plus identité et
+/* 17 colonnes (4 sources de note × moyenne/≥60/≥seuil, plus identité et
    modération) ne tiennent plus dans la largeur du panneau : défilement
    horizontal plutôt que des colonnes trop étroites pour se lire. min-width
    (et non width) sur .data-table, pour que thead et chaque tbody tr — qui
@@ -274,7 +274,7 @@ __CSS_PARTAGE__
     <details class="panel" id="sec-groupes" open>
         <summary>Statistiques par groupe</summary>
         <div class="panel-body">
-            <p class="panel-lede">Une ligne par groupe, sur la ou les compétences porteuses de l'épreuve (deux sections pour l'anglais, qui en a deux). Moyenne, % ≥ 60 et % ≥ 74 pour chacune des quatre sources de note (note d'école, examen, note école modérée, résultat final), plus la modération moyenne. <span id="lede-repere">La ligne de repère porte l'ensemble de l'école, ou l'école <em>sans</em> la sélection dès qu'un groupe ou un enseignant précis est choisi.</span> Ces mesures n'ont pas le même effectif : chaque case porte son propre n en infobulle (survol), et s'italique sous 10 élèves. Tableau large : défilement horizontal.</p>
+            <p class="panel-lede">Une ligne par groupe, sur la ou les compétences porteuses de l'épreuve (deux sections pour l'anglais, qui en a deux). Moyenne, % ≥ 60 et % ≥ __SEUIL_SANS_RISQUE__ pour chacune des quatre sources de note (note d'école, examen, note école modérée, résultat final), plus la modération moyenne. <span id="lede-repere">La ligne de repère porte l'ensemble de l'école, ou l'école <em>sans</em> la sélection dès qu'un groupe ou un enseignant précis est choisi.</span> Ces mesures n'ont pas le même effectif : chaque case porte son propre n en infobulle (survol), et s'italique sous 10 élèves. Tableau large : défilement horizontal.</p>
             <div id="groupes-box"></div>
         </div>
     </details>
@@ -327,17 +327,16 @@ __CSS_PARTAGE__
                 <li>Seule la passation de <strong>mai-juin</strong> est retenue&nbsp;: les reprises d'août et l'école des cours d'été mélangeraient première passation et reprise après échec.</li>
                 <li>Les résultats obtenus hors __NOM_CSS__ (autre centre de services, école privée, formation aux adultes) sont écartés&nbsp;: ils figurent au relevé de l'élève mais ne sont pas des résultats de la commission.</li>
                 <li><strong>Quatre sources de note</strong>, à ne pas confondre&nbsp;: <em>note de l'école</em> (NOTE_ECOLE_BRUT, l'évaluation maison avant modération)&nbsp;; <em>épreuve MEQ</em> (NOTE_MINST_CONVR, l'épreuve seule)&nbsp;; <em>note modérée</em> (NOTE_ECOLE_MODR, la note d'école après modération)&nbsp;; <em>résultat final</em> (RESLT_FINAL, ce qui paraît au relevé, combinant les deux).</li>
-                <li><strong>La colonne « Sommaire » et les colonnes de compétence ne comptent pas les mêmes élèves</strong>, et aucune n'est fausse. Le ministère publie une ligne par code&nbsp;: le cours (063414 pour le CST) et chaque compétence (063410 Résoudre, 063420 Utiliser) sont des enregistrements distincts, et tous les élèves ne portent pas les trois. En 2025-2026, le CST compte ainsi 469 élèves au sommaire, 466 sur Résoudre et 417 sur Utiliser. L'écart est déjà dans l'export du ministère&nbsp;— aucun filtre du rapport ne l'introduit. La colonne « Sommaire » est celle qui correspond à la barre du même cours sur la page PEVR du rapport CCG.</li>
+                <li><strong>La colonne « Sommaire » et les colonnes de compétence ne comptent pas les mêmes élèves</strong>, et aucune n'est fausse. Le ministère publie une ligne par code&nbsp;: le cours (063414 pour le CST) et chaque compétence (063410 Résoudre, 063420 Utiliser) sont des enregistrements distincts, et tous les élèves ne portent pas les trois. En 2025-2026, le CST compte ainsi 469 élèves au sommaire, 466 sur Résoudre et 417 sur Utiliser. L'écart est déjà dans l'export du ministère&nbsp;— aucun filtre du rapport ne l'introduit.</li>
                 <li>La note d'épreuve n'est pas portée par le code du cours mais par une <strong>compétence précise</strong> — Théorie en science, Utiliser en mathématique, Écrire en français. Seule l'histoire la porte sur le cours lui-même. Les sections « Statistiques par groupe », « Transformation » et « Nuage » utilisent automatiquement la ou les compétences porteuses de l'épreuve — deux pour l'anglais (Communiquer et Écrire), une seule pour les autres matières.</li>
                 <li><strong>Anglais&nbsp;: deux épreuves.</strong> L'interaction orale (Communiquer) et la production écrite (Écrire) portent chacune leur propre note d'épreuve pour le même élève. Elles restent deux compétences distinctes et ne sont jamais additionnées — les fusionner compterait chaque élève deux fois.</li>
                 <li id="note-vue-enseignant"><strong>Vue « enseignant »</strong>&nbsp;: le repère de comparaison est l'école <em>privée de cet enseignant</em>, pas l'école entière. Un enseignant ne se compare donc jamais à un ensemble qui l'inclut. Les enseignants sont désignés par leur prénom et l'initiale de leur nom.</li>
                 <li>Un groupe de moins de <strong>5 élèves</strong> est compté dans les agrégats mais ses statistiques propres ne sont pas affichées&nbsp;: à cet effectif, une moyenne de groupe s'approche d'une donnée individuelle.</li>
                 <li><strong>Note d'école, épreuve, note modérée et résultat final n'ont pas le même effectif</strong>, dans « Statistiques combinées » comme dans « Statistiques par groupe »&nbsp;: tous les élèves ne portent pas les quatre notes (un élève peut avoir une note d'école sans note d'épreuve, ou l'inverse). « Statistiques combinées » affiche donc une ligne Effectif propre à chaque colonne. « Statistiques par groupe », dont chaque ligne combine plusieurs mesures, ne peut pas répéter quatre colonnes d'effectif sans les tripler&nbsp;: chaque case y porte son propre n en infobulle (survol) et s'italique sous 10 élèves, plutôt que de se fier à la seule colonne « Effectif » (celle du résultat final) comme dénominateur commun.</li>
                 <li><strong>Deux sections sont nominatives&nbsp;; le reste du rapport ne l'est pas.</strong> Le nuage note-école / note-MEQ porte un point par élève, avec son nom, son groupe et ses deux notes au survol — comme l'ancien projet. Le graphique de modération l'est aussi depuis qu'il affiche un point par élève d'un groupe précis (nom et écart au survol), plutôt qu'un point par groupe agrégé. Toutes les autres sections restent agrégées. Ce rapport circule sur le partage réseau&nbsp;: à diffuser en connaissance de cause.</li>
-                <li>Les moyennes et écarts-types se recalculent à la volée depuis des statistiques suffisantes (effectif, somme, somme des carrés), et les seuils PEVR depuis un histogramme de la note BRUTE (non arrondie)&nbsp;: un élève à 59,6&nbsp;% compte sous 60&nbsp;%, contrairement au rapport CCG qui arrondit chaque élève avant de le classer.</li>
+                <li>Les moyennes et écarts-types se recalculent à la volée depuis des statistiques suffisantes (effectif, somme, somme des carrés), et les seuils depuis un histogramme de la note BRUTE (non arrondie)&nbsp;: un élève à 59,6&nbsp;% compte sous 60&nbsp;%, contrairement au rapport CCG qui arrondit chaque élève avant de le classer.</li>
                 <li>L'écart-type est celui d'un <strong>échantillon</strong> (dénominateur n−1), comme dans le rapport CCG et dans l'ancien projet.</li>
                 <li>La <strong>modération</strong> ne porte que sur les élèves ayant <strong>à la fois</strong> une note d'école et une note d'épreuve&nbsp;: la colonne «&nbsp;Modération&nbsp;» (note modérée − note brute), le graphique «&nbsp;Effet de la modération&nbsp;» et la transformation n'incluent jamais un élève absent à l'épreuve, et ne changent donc pas avec la case «&nbsp;Retirer les absents&nbsp;». La transformation se calcule au sein de chaque groupe&nbsp;; sur plusieurs groupes, c'est la moyenne (non pondérée) des transformations des groupes.</li>
-                __NOTE_CIBLES__
                 <li>Carte de chaleur par question, marqueurs <strong>▲/▼</strong> — <em>test de permutation</em>. La question posée&nbsp;: le taux de réussite de cet <strong>enseignant</strong> à cette question s'écarte-t-il du taux du __NOM_CSS__ plus que le hasard du découpage des élèves en groupes ne l'expliquerait&nbsp;? On réattribue 10&nbsp;000 fois les élèves aux enseignants au hasard, à effectifs conservés, et l'on compte la fraction des tirages où l'écart au __NOM_CSS__ est au moins aussi grand que l'écart observé&nbsp;: c'est le <em>p</em>. Le tirage est déterministe — les chiffres ne bougent pas d'une ouverture à l'autre. Ce qui est permuté est le <strong>vecteur de réponses entier</strong> d'un élève, jamais une réponse isolée&nbsp;: un élève fort l'est sur toutes les questions à la fois, et permuter question par question resserrerait à tort la distribution nulle. Quatre réserves, toutes délibérées. <strong>1.</strong> Le test porte sur le taux <strong>brut</strong>, sans ajustement sur le niveau général de l'enseignant&nbsp;: un groupe globalement fort ressortira significatif sur beaucoup de questions à la fois, ce qui est une lecture de <em>niveau</em>, pas de <em>profil</em> — un ▲ ne désigne pas une question mieux enseignée que les autres. <strong>2.</strong> La comparaison se fait toujours au <strong>__NOM_CSS__ entier</strong> pour l'année et le cours<span class="note-reste">, y compris quand la ligne de repère affichée est « Reste de l'école »&nbsp;: la ligne du tableau et le marqueur ne répondent donc pas exactement à la même question</span>. <strong>3.</strong> Une épreuve pose une quinzaine de questions et le tableau aligne des dizaines d'enseignants&nbsp;: à 5&nbsp;% par case, une case sur vingt ressortirait sans que rien ne distingue personne. Le marqueur suit donc la <em>q-valeur</em> (correction FDR de Benjamini-Hochberg sur les questions d'un enseignant pour une épreuve), et non le <em>p</em> brut, qui reste lisible en infobulle. La colonne « Ensemble » résume des questions déjà testées&nbsp;: elle suit le <em>p</em>, sans correction. <strong>4.</strong> Une case de moins de 5 réponses n'est jamais marquée, et une case dont l'effectif ne correspond pas exactement à celui testé non plus — un filtre de groupe qui restreint la ligne d'un enseignant portant plusieurs groupes retire les marqueurs plutôt que d'en montrer d'empruntés. Précalculé par <code>le module de calcul</code> à la construction de la base&nbsp;: le test exige les réponses élève par élève, que le rapport n'embarque pas. Une base construite sans cette étape affiche la carte sans marqueurs.</li>
                 <li><strong>Absents à l'épreuve.</strong> Un élève absent a « ABS » comme résultat final sur la compétence qui porte l'épreuve&nbsp;: il n'a donc ni résultat final ni note d'examen dans cette colonne, mais sa note d'école et sa note modérée y sont comptées. Il reste aussi compté au Sommaire et sur les autres compétences, où le ministère lui attribue un résultat (l'absence y pèse comme un zéro sur la part de la compétence évaluée par l'épreuve). La case «&nbsp;Retirer les absents à l'épreuve&nbsp;» les retire de toutes les colonnes et de toutes les sections à la fois. Ils n'entrent jamais dans la modération (voir plus bas), cochée ou non. Un élève qui a une note d'épreuve sur une autre ligne du même cours n'est pas considéré absent.</li>
                 <li>Le groupe <strong>85</strong> est exclu (élèves sans groupe-cours assigné), comme dans l'ancien projet. Les codes Sommaire ne portent pas de numéro de groupe&nbsp;: ils ne sont donc lisibles qu'au niveau de l'école.</li>
@@ -696,7 +695,7 @@ function colonnesCompetence(m, code) {
    là où il n'en manque aucun (voir le module de calcul, bloc 4).
 
    C'est aussi la seule colonne DIRECTEMENT comparable à la barre SOMMAIRE de
-   la page PEVR du rapport CCG, qui agrège ce même code sous
+   le rapport de synthèse, qui agrège ce même code sous
    « 063414(MEQ) ». Placée en FIN de tableau (et non en tête) : c'est un
    résumé du cours entier, pas une compétence parmi les autres — le lecteur
    parcourt d'abord les compétences, puis referme sur leur synthèse.
@@ -753,7 +752,6 @@ function rendreStats() {
         {
             nom: `% élèves zone sans risque (≥ ${SEUIL_SANS_RISQUE} %)`,
             f: (s, c) => c.p === "MODERATION" ? "—" : fmt(partAuDessus(s, SEUIL_SANS_RISQUE), 1),
-            cible: m.pevr, cibleNom: "PEVR",
         },
         {
             nom: `% élèves ayant la note de passage (≥ ${SEUIL_PASSAGE} %)`,
@@ -790,7 +788,7 @@ function rendreStats() {
             const v = l.f(c.serie, c);
             let cls = "num";
             /* Vert/rouge uniquement sur les lignes porteuses d'une cible, et
-               seulement sur la source qui la chiffre : le PEVR se mesure au
+               seulement sur la source qui la chiffre : la cible se mesure au
                résultat final, pas à la note d'école. */
             if (l.cible != null && c.p === "FINAL" && c.serie.n) {
                 const val = l.nom.includes("sans risque")
@@ -832,7 +830,7 @@ function celMesure(serie, texte) {
 /* Moyenne, ≥ SEUIL_PASSAGE et ≥ SEUIL_SANS_RISQUE d'une même série — les
    trois portent le MÊME n (une seule population), donc une seule paire
    classe/infobulle par cellule suffit, via celMesure(). Pas de symbole % :
-   l'en-tête donne déjà l'unité (Moy./≥60/≥74), et 17 colonnes chiffrées n'ont
+   l'en-tête donne déjà l'unité (Moy./≥60/≥seuil), et 17 colonnes chiffrées n'ont
    pas la place de le répéter sur chaque case — fmt() plutôt que pct(). */
 function celsMesureTrio(serie) {
     return celMesure(serie, fmt(moyenne(serie), 1))
@@ -871,7 +869,7 @@ function rendreGroupes() {
             return;
         }
 
-        /* Moyenne / ≥60 / ≥74 pour CHACUNE des quatre sources de note (mêmes
+        /* Moyenne / ≥60 / ≥seuil pour CHACUNE des quatre sources de note (mêmes
            quatre que « Statistiques combinées », même ordre, mêmes couleurs
            d'en-tête col-c2/col-meq/col-mod/col-somm) — pas seulement pour le
            résultat final comme avant. La Modération (col-c1) reste seule avec
