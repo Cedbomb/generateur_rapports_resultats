@@ -8,13 +8,13 @@ connexion Internet.
 
 ## Ce qu'il vous faut
 
-1. **Un ordinateur avec Python récent** : Python 3.10 ou plus récent (idéalement la dernière
+1. **Un ordinateur avec le logiciel Python d'installée** : Python 3.10 ou plus récent (idéalement la dernière
    version offerte), avec Tkinter. L'installateur Windows de python.org inclut Tkinter.
 2. **Les rapports Charlemagne 106 et 109** des épreuves ministérielles, exportés en Excel (`.xlsx`) :
 
-   | Rapport | Contenu | Obligatoire |
+   | Rapport | Contenu |
    | --- | --- | --- |
-   | **109** | Résultats des élèves aux épreuves | Oui |
+   | **109** | Résultats des élèves aux épreuves | Obligatoire |
    | **106** | Résultats des élèves question par question | Recommandé : sans lui, l'analyse par question est absente des rapports |
 
    Les classeurs peuvent être protégés par mot de passe. Exportez une année ou plusieurs ; l'outil
