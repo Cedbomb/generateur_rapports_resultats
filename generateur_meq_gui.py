@@ -8,6 +8,7 @@ import json
 import queue
 import threading
 import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
@@ -27,6 +28,8 @@ from meq.rapport import MATIERES
 # Aucune donnee nominative ici : ni eleve, ni enseignant.
 FICHIER_PARAMETRES = Path.home() / ".generateur_meq.json"
 CLE_DU_COURS = {m["parent"]: m["cle"] for m in MATIERES}
+LOGO = Path(__file__).resolve().parent / "meq" / "assets" / "logo_cssl.png"
+COURRIEL = "lejeunec@csslaurentides.gouv.qc.ca"
 
 
 class VersFile:
@@ -47,12 +50,13 @@ class Application(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Générateur de rapports MEQ")
-        self.geometry("920x640")
+        self.geometry("920x760")
         self.file = queue.Queue()
         self.analyse = None
         self.prefixes = {}
         self.memoire = self._lire_parametres()
 
+        self._pied_de_page()
         self.onglets = ttk.Notebook(self)
         self.onglets.pack(fill="both", expand=True, padx=8, pady=8)
         self._onglet_fichiers()
@@ -428,6 +432,20 @@ class Application(tk.Tk):
         self.journal.configure(state="disabled")
 
     # ---- Commun ---------------------------------------------------------
+    def _pied_de_page(self):
+        """Logo de l'organisation et courriel de contact, sous les onglets."""
+        pied = ttk.Frame(self, padding=(10, 0, 10, 8))
+        pied.pack(side="bottom", fill="x")
+        ttk.Separator(self, orient="horizontal").pack(side="bottom", fill="x", padx=8)
+        try:
+            self.image_logo = tk.PhotoImage(file=str(LOGO))
+            ttk.Label(pied, image=self.image_logo).pack(side="left")
+        except tk.TclError:
+            pass
+        lien = ttk.Label(pied, text=f"Contact : {COURRIEL}", foreground="#0b5cad", cursor="hand2")
+        lien.pack(side="right")
+        lien.bind("<Button-1>", lambda _e: webbrowser.open(f"mailto:{COURRIEL}"))
+
     def _vider_file(self):
         try:
             while True:
