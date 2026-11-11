@@ -12,6 +12,7 @@ from . import calculs, rapport
 from .lecture import Analyse
 from .rapport import MATIERES
 from .reduction import (
+    CODE_PERMANENT,  # noqa: F401 (reexporte ; verifier_fichier l'applique)
     I,
     IP,
     IQ,
@@ -26,7 +27,6 @@ from .reduction import (
 )
 
 ELEVE_ANONYME = "Élève"
-CODE_PERMANENT = re.compile(r"\b[A-Z]{4}\d{8}\b")
 NOMS_COURTS = {"cst": "Math CST", "sn": "Math SN", "ts": "Math TS", "st": "Science", "ats": "ATS",
                "histoire": "Histoire", "francais": "Français", "anglais": "Anglais"}
 MOTIF_NOM_CSS = re.compile(r"^[\w '’.\-]+$")
@@ -198,8 +198,6 @@ def generer(analyse: Analyse, p: Parametres) -> Resultat:
         html = rapport.build_html(red, payloads_g85=red_g85, export=export, **communs)
         permis = noms_eleves(red["cellules"]) | noms_eleves(red_g85["cellules"])
         fuites = verifier_fichier(html, permis, tous_eleves, permis_ens, tous_ens)
-        if CODE_PERMANENT.search(html):
-            fuites.append("code permanent")
         if not p.inclure_noms and permis - {ELEVE_ANONYME}:
             fuites.append("nom d'élève")
         if fuites:

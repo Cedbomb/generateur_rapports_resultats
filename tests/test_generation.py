@@ -284,6 +284,12 @@ class ReglagesIntegres(Base):
             self.assertIn(attendu, h)
         self.assertNotIn('"cle":"ts"', h)
 
+    def test_verifier_fichier_detecte_code_permanent(self):
+        from meq.reduction import verifier_fichier
+        self.assertEqual(verifier_fichier('<p>ABCD12345678</p>', set(), set(), set(), set()),
+                         ["code permanent"])
+        self.assertEqual(verifier_fichier('<p>XABCD12345678Y</p>', set(), set(), set(), set()), [])
+
 
 if __name__ == "__main__":
     unittest.main()

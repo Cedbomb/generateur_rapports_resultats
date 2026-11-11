@@ -29,6 +29,10 @@ IP = {c: i for i, c in enumerate(CHAMPS_PERM)}
 ECO_AUTRES = 0
 
 
+# Code permanent d'eleve (4 lettres, 8 chiffres) : ne doit figurer dans aucun rapport.
+CODE_PERMANENT = re.compile(r"\b[A-Z]{4}\d{8}\b")
+
+
 _COPIES = {"ECO", "ANNEE", "CD_COURS", "COURS_PARENT", "DESCR_ABREG"}
 
 
@@ -238,8 +242,8 @@ def noms_eleves(cellules: list) -> set:
 
 def verifier_fichier(html: str, permis_eleves: set, tous_eleves: set,
                      permis_ens: set, tous_ens: set) -> list[str]:
-    """Noms presents dans le fichier sans y avoir droit."""
-    fuites = []
+    """Noms (et codes permanents) presents dans le fichier sans y avoir droit."""
+    fuites = ["code permanent"] if CODE_PERMANENT.search(html) else []
     for nom in sorted(tous_eleves - permis_eleves):
         if json.dumps(nom, ensure_ascii=False) in html:
             fuites.append(f"élève {nom}")
