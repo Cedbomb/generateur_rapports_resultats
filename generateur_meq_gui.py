@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import csv
 import json
 import queue
 import threading
@@ -82,8 +81,10 @@ class Application(tk.Tk):
         ttk.Label(b, text="   Mot de passe des classeurs (si protégés) :").pack(side="left")
         self.mdp = tk.StringVar()
         ttk.Entry(b, textvariable=self.mdp, show="•", width=24).pack(side="left", padx=4)
+        self.btn_continuer = self._bouton_continuer(b, 1)
+        self.btn_continuer.state(["disabled"])
         self.btn_analyser = ttk.Button(b, text="Analyser", command=self._analyser)
-        self.btn_analyser.pack(side="right")
+        self.btn_analyser.pack(side="right", padx=(0, 4))
         self.etat = tk.StringVar(value="Ajoutez vos fichiers, puis cliquez sur Analyser.")
         ttk.Label(f, textvariable=self.etat, wraplength=860).pack(anchor="w", pady=(8, 0))
 
@@ -136,7 +137,14 @@ class Application(tk.Tk):
         self._prefixe_change()
         for i in (1, 2, 3):
             self.onglets.tab(i, state="normal")
+        self.btn_continuer.state(["!disabled"])
         self.onglets.select(1)
+
+    def _bouton_continuer(self, parent, suivant: int) -> ttk.Button:
+        """Bouton « Continuer » en bas à droite, qui ouvre l'onglet suivant."""
+        bouton = ttk.Button(parent, text="Continuer →", command=lambda: self.onglets.select(suivant))
+        bouton.pack(side="right")
+        return bouton
 
     # ---- Onglet 2 -------------------------------------------------------
     def _onglet_parametres(self):
@@ -155,6 +163,9 @@ class Application(tk.Tk):
         self.var_groupes = tk.StringVar()
         ttk.Entry(h, textvariable=self.var_groupes, width=30).grid(row=2, column=1, sticky="w", padx=4)
 
+        bas = ttk.Frame(f)
+        bas.pack(side="bottom", fill="x")
+        self._bouton_continuer(bas, 2)
         b = ttk.Frame(f)
         b.pack(fill="both", expand=True, pady=8)
         g = ttk.LabelFrame(b, text="Écoles (double-clic pour nommer)", padding=6)
@@ -211,8 +222,7 @@ class Application(tk.Tk):
         self.arbre.bind("<Double-1>", self._nommer_enseignant)
         ttk.Button(bas, text="Créer le modèle Excel…", command=self._creer_modele).pack(side="left")
         ttk.Button(bas, text="Importer le fichier Excel…", command=self._importer_excel).pack(side="left", padx=4)
-        ttk.Button(bas, text="Exporter en CSV…", command=self._exporter).pack(side="right")
-        ttk.Button(bas, text="Importer un CSV…", command=self._importer).pack(side="right", padx=4)
+        self._bouton_continuer(bas, 3)
         self.lignes_ens = {}
 
     def _remplir_enseignants(self):
@@ -270,33 +280,6 @@ class Application(tk.Tk):
             if len(ignorees) > 12:
                 message += "\n…"
         messagebox.showinfo("Import", message)
-
-    def _importer(self):
-        chemin = filedialog.askopenfilename(filetypes=[("CSV", "*.csv")])
-        if not chemin:
-            return
-        trouves = 0
-        with open(chemin, encoding="utf-8-sig", newline="") as fh:
-            for r in csv.DictReader(fh, delimiter=";"):
-                try:
-                    cle = (int(r["ecole"]), r["matiere"].strip(), r["groupe"].strip())
-                    nom = r["enseignant"].strip()
-                except (KeyError, ValueError, AttributeError):
-                    continue
-                if cle in self.lignes_ens:
-                    self.arbre.set(self.lignes_ens[cle], "enseignant", nom)
-                    trouves += 1
-        messagebox.showinfo("Import", f"{trouves} groupe(s) mis à jour.")
-
-    def _exporter(self):
-        chemin = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")])
-        if not chemin:
-            return
-        with open(chemin, "w", encoding="utf-8-sig", newline="") as fh:
-            ecr = csv.writer(fh, delimiter=";")
-            ecr.writerow(["ecole", "matiere", "groupe", "enseignant"])
-            for (eco, cle, groupe), i in self.lignes_ens.items():
-                ecr.writerow([eco, cle, groupe, self.arbre.set(i, "enseignant")])
 
     # ---- Onglet 4 -------------------------------------------------------
     def _onglet_generer(self):
@@ -383,6 +366,8 @@ class Application(tk.Tk):
         p = self._parametres()
         if p is None:
             return
+        if not self._licence_acceptee():
+            return
         if p.inclure_noms and not messagebox.askokcancel(
             "Noms d'élèves",
             "Les rapports école et enseignant contiendront des noms d'élèves, lisibles dans le fichier "
@@ -405,6 +390,58 @@ class Application(tk.Tk):
                 self.file.put(("erreur", f"{type(e).__name__} : {e}"))
 
         threading.Thread(target=travail, daemon=True).start()
+
+    def _licence_acceptee(self) -> bool:
+        """Résume la licence CC BY-NC-SA 4.0 ; vrai si l'utilisateur poursuit."""
+        fen = tk.Toplevel(self)
+        fen.title("Licence")
+        fen.resizable(False, False)
+        fen.transient(self)
+        cadre = ttk.Frame(fen, padding=16)
+        cadre.pack(fill="both", expand=True)
+        ttk.Label(cadre, text="© 2026 Centre de services scolaire des Laurentides",
+                  font=("TkDefaultFont", 10, "bold")).pack(anchor="w")
+        ttk.Label(cadre, text="Cet outil est distribué sous la licence Creative Commons "
+                              "BY-NC-SA 4.0 :", wraplength=420).pack(anchor="w", pady=(6, 4))
+        for puce in ("Vous pouvez l'utiliser, le copier, le modifier et le partager.",
+                     "Attribution : citez le Centre de services scolaire des Laurentides.",
+                     "Pas d'utilisation commerciale : aucune vente ni usage à but lucratif.",
+                     "Partage dans les mêmes conditions : vos modifications doivent être "
+                     "diffusées sous la même licence.",
+                     "Aucune garantie : l'outil est fourni tel quel. Vérifiez les résultats avant "
+                     "de les diffuser ou de prendre des décisions."):
+            ttk.Label(cadre, text=f"•  {puce}", wraplength=420).pack(anchor="w", padx=(8, 0), pady=1)
+        licence = ttk.Label(cadre, text="Texte complet de la licence", foreground="#0b5cad", cursor="hand2")
+        licence.pack(anchor="w", pady=(6, 0))
+        licence.bind("<Button-1>", lambda _e: webbrowser.open(
+            "https://creativecommons.org/licenses/by-nc-sa/4.0/deed.fr"))
+        ttk.Separator(cadre, orient="horizontal").pack(fill="x", pady=10)
+        contact = ttk.Label(cadre, text=f"Contact : {COURRIEL}", foreground="#0b5cad", cursor="hand2")
+        contact.pack(anchor="w")
+        contact.bind("<Button-1>", lambda _e: webbrowser.open(f"mailto:{COURRIEL}"))
+
+        reponse = {"ok": False}
+
+        def fermer(ok):
+            reponse["ok"] = ok
+            fen.destroy()
+
+        boutons = ttk.Frame(cadre)
+        boutons.pack(fill="x", pady=(12, 0))
+        ttk.Button(boutons, text="Annuler", command=lambda: fermer(False)).pack(side="right")
+        ok = ttk.Button(boutons, text="Générer", command=lambda: fermer(True))
+        ok.pack(side="right", padx=(0, 6))
+        fen.protocol("WM_DELETE_WINDOW", lambda: fermer(False))
+        fen.bind("<Return>", lambda _e: fermer(True))
+        fen.bind("<Escape>", lambda _e: fermer(False))
+        fen.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - fen.winfo_width()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - fen.winfo_height()) // 2
+        fen.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        fen.grab_set()
+        ok.focus_set()
+        self.wait_window(fen)
+        return reponse["ok"]
 
     def _fin(self, r):
         self.btn_generer.state(["!disabled"])
