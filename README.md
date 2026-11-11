@@ -96,3 +96,13 @@ python -m unittest discover tests
 
 Les tests n'utilisent que des données inventées. `exemple/generer_exemple.py` recrée les fichiers
 d'exemple.
+
+## Licence
+
+© 2026 Centre de services scolaire des Laurentides.
+
+Ce programme est distribué sous la licence
+[Creative Commons Attribution - Pas d'utilisation commerciale - Partage dans les mêmes conditions 4.0 International (CC BY-NC-SA 4.0)](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.fr).
+Vous pouvez le copier, le modifier et le redistribuer à des fins non commerciales, à condition
+d'en citer la source et de diffuser vos modifications sous la même licence. Le texte complet se
+trouve dans le fichier [LICENSE](LICENSE).
