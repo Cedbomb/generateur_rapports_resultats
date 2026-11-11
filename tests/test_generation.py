@@ -71,6 +71,73 @@ class TestLecture(Base):
                     notes = {v for v, _ in json.loads(l[champ])}
                     self.assertFalse(notes & {99.5, 98.5})
 
+    def test_poids_reel_examen(self):
+        # Les donnees d'exemple font final = (moderee + examen) / 2, sans
+        # ecrasement : le poids reel vaut 50 % + la part de la moderation, a
+        # l'arrondi du resultat final pres.
+        calculs.CTX.__init__(prefixe_organisme="999")
+        with silence():
+            lignes = calculs.aggreger_detail(self.analyse.conn)
+        avec = [l for l in lignes if l["N_POIDS"]]
+        self.assertTrue(avec)
+        for l in lignes:
+            self.assertEqual(l["N_POIDS"], l["N_TRIPLE"])
+            self.assertEqual(l["N_ECART_FINAL"], l["N_POIDS"])
+            self.assertLessEqual(l["N_POIDS_ELEVE"], l["N_POIDS"])
+        fb = sum(l["SOM_POIDS_FB"] for l in avec)
+        mb = sum(l["SOM_POIDS_MB"] for l in avec)
+        eb2 = sum(l["SOM_POIDS_EB2"] for l in avec)
+        self.assertAlmostEqual(fb / eb2, 0.5 + 0.5 * mb / eb2, delta=0.01)
+
+    def test_distributions_par_question(self):
+        # Chaque case porte une distribution additive qui recompose N et SOM :
+        # bonne lettre x 4 pour les choix multiples, somme des scores sinon.
+        calculs.CTX.__init__(prefixe_organisme="999")
+        with silence():
+            lignes = calculs.aggreger_questions(self.analyse.conn)
+        self.assertTrue(lignes)
+        types = set()
+        for l in lignes:
+            d = json.loads(l["DISTRIB"])
+            self.assertEqual(sum(d.values()), l["N"])
+            self.assertRegex(l["PASSATION"], r"^\d{4}-\d{2}$")
+            if l["CORRIGE"]:
+                types.add("lettres")
+                self.assertLessEqual(set(d), {"A", "B", "C", "D", "?"})
+                self.assertAlmostEqual(d.get(l["CORRIGE"], 0) * calculs.BAREME_CHOIX_MULTIPLE, l["SOM"])
+            else:
+                types.add("scores")
+                self.assertLessEqual(l["SCORE_MAX"], calculs.SEUIL_TRANCHES)
+                self.assertAlmostEqual(sum(float(k) * n for k, n in d.items()), l["SOM"])
+        self.assertEqual(types, {"lettres", "scores"})
+
+    def test_tranches_au_dela_du_seuil(self):
+        q = calculs.LigneQuestion(1, 2024, "X", "055410", "41", "eleve", "AD", 11, 0.0)
+        cle = lambda s: calculs._cle_distribution(q._replace(score=s), 100.0)
+        self.assertEqual([cle(0), cle(9.9), cle(55), cle(99), cle(100)], ["0", "0", "50", "90", "90"])
+        self.assertEqual(calculs._cle_distribution(q._replace(score=2.5), 4.0), "2.5")
+
+    def test_corrige_par_passation(self):
+        # Deux passations la meme annee scolaire, deux corriges : mai = B,
+        # juin = C. Un corrige par annee aurait mele les deux votes.
+        lignes = []
+        for passation, bonne in (("2025-05", "B"), ("2025-06", "C")):
+            for e in range(8):
+                eleve = f"{passation}-{e}"
+                base = calculs.LigneQuestion(1, 2024, eleve, "055410", "41", "eleve", "DC", 7, 4.0,
+                                             passation=passation)
+                lignes.append(base)
+                lignes.append(base._replace(type_quest="OB", no_quest=1,
+                                            score="" if e == 7 else (bonne if e < 6 else "A")))
+        with silence():
+            notees = calculs.noter_choix_multiples(lignes)
+        ob = [l for l in notees if l.type_quest == "OB"]
+        self.assertEqual(len(ob), 16)
+        for l in ob:
+            self.assertEqual(l.corrige, {"2025-05": "B", "2025-06": "C"}[l.passation])
+            self.assertEqual(l.score, calculs.BAREME_CHOIX_MULTIPLE if l.reponse == l.corrige else 0.0)
+        self.assertEqual(sum(1 for l in ob if l.reponse == ""), 2)   # vides : comptees fausses
+
     def test_sommaire_rattache_au_groupe(self):
         calculs.CTX.__init__(prefixe_organisme="999")
         with silence():

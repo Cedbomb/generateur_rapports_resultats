@@ -5,6 +5,8 @@ import datetime
 import json
 from pathlib import Path
 
+from .calculs import SEUIL_ECART_POIDS, SEUIL_TRANCHES
+
 APP_VERSION = "1.0.0"
 ASSETS = Path(__file__).parent / "assets"
 
@@ -98,18 +100,30 @@ CHAMPS = [
     "N_BRUT_ABS", "SOM_BRUT_ABS", "SOMCAR_BRUT_ABS", "HIST_BRUT_ABS",
     "N_MODR_ABS", "SOM_MODR_ABS", "SOMCAR_MODR_ABS", "HIST_MODR_ABS",
     "N_FINAL_ABS", "SOM_FINAL_ABS", "SOMCAR_FINAL_ABS", "HIST_FINAL_ABS",
+    "N_POIDS", "SOM_POIDS_FB", "SOM_POIDS_MB", "SOM_POIDS_EB2",
+    "N_POIDS_ELEVE", "SOM_POIDS_ELEVE", "SOMCAR_POIDS_ELEVE", "HIST_POIDS_ELEVE",
+    "N_ECART_FINAL", "SOM_ECART_FINAL", "SOMCAR_ECART_FINAL", "HIST_ECART_FINAL",
 ]
+
+
+# Poids officiel de l'epreuve dans le resultat final : le scenario de base
+# auquel se compare le poids reel de l'examen.
+POIDS_EXAMEN = 0.5
 
 
 _CHAMPS_JSON = {"HIST_BRUT", "HIST_MODR", "HIST_MEQ", "HIST_FINAL",
                 "HIST_MODERATION", "ELEVES_JOINT", "ELEVES_MODERATION_JOINT",
-                "HIST_BRUT_ABS", "HIST_MODR_ABS", "HIST_FINAL_ABS"}
+                "HIST_BRUT_ABS", "HIST_MODR_ABS", "HIST_FINAL_ABS",
+                "HIST_POIDS_ELEVE", "HIST_ECART_FINAL"}
 
 
 CHAMPS_QUESTIONS = [
     "ECO", "ANNEE", "CD_COURS", "COURS_PARENT",
     "GROUPE", "ENSEIGNANT", "ENSEIGNANT_ID", "NB_ENSEIGNANTS",
     "TYPE_QUEST", "NO_QUEST", "SCORE_MAX", "N", "SOM", "SOMCAR",
+    # Infobulle par question : passation, bonne lettre (choix multiples) et
+    # distribution additive des reponses — voir calculs._cle_distribution.
+    "PASSATION", "CORRIGE", "DISTRIB",
 ]
 
 
@@ -192,6 +206,12 @@ def build_payloads(rows: list[dict], rows_questions: list[dict] | None = None,
             ignorees_questions += 1
             continue
         ligne = [r.get(c) for c in CHAMPS_QUESTIONS]
+        i_distrib = CHAMPS_QUESTIONS.index("DISTRIB")
+        if isinstance(ligne[i_distrib], str):
+            try:
+                ligne[i_distrib] = json.loads(ligne[i_distrib]) or None
+            except ValueError:
+                ligne[i_distrib] = None
         ligne[CHAMPS_QUESTIONS.index("ECO")] = eco
         ligne[CHAMPS_QUESTIONS.index("ANNEE")] = annee
         cellules_questions.append(ligne)
@@ -303,6 +323,12 @@ def build_html(payloads: dict, questions_disponibles: bool = False,
         ("__CIBLES_JSON__", safe_json_for_script(cibles or {})),
         ("__NOM_CIBLE_JSON__", safe_json_for_script(nom_cible)),
         ("__N_MIN_JSON__", safe_json_for_script(N_MIN_AFFICHAGE)),
+        ("__POIDS_EXAMEN_JSON__", safe_json_for_script(POIDS_EXAMEN)),
+        ("__SEUIL_ECART_POIDS_JSON__", safe_json_for_script(SEUIL_ECART_POIDS)),
+        ("__SEUIL_ECART_POIDS__", str(SEUIL_ECART_POIDS)),
+        ("__POIDS_EXAMEN_PCT__", f"{POIDS_EXAMEN * 100:g}"),
+        ("__POIDS_EXAMEN_DEC__", f"{POIDS_EXAMEN:g}".replace(".", ",")),
+        ("__SEUIL_TRANCHES_JSON__", safe_json_for_script(SEUIL_TRANCHES)),
         ("__QUESTIONS_JSON__", safe_json_for_script(bool(questions_disponibles))),
         ("__GENERATED_AT__", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")),
         ("__APP_VERSION__", version),

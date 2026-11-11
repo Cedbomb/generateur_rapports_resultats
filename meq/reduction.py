@@ -40,7 +40,8 @@ _VIDES = {"GROUPE": "", "ENSEIGNANT": "", "ENSEIGNANT_ID": "", "NB_ENSEIGNANTS":
           "ELEVES_JOINT": None, "ELEVES_MODERATION_JOINT": None}
 
 
-_COPIES_Q = {"ECO", "ANNEE", "CD_COURS", "COURS_PARENT", "TYPE_QUEST", "NO_QUEST", "SCORE_MAX"}
+_COPIES_Q = {"ECO", "ANNEE", "CD_COURS", "COURS_PARENT", "TYPE_QUEST", "NO_QUEST", "SCORE_MAX",
+             "PASSATION", "CORRIGE"}
 
 
 _VIDES_Q = {"GROUPE": "", "ENSEIGNANT": "", "ENSEIGNANT_ID": "", "NB_ENSEIGNANTS": 0}
@@ -96,11 +97,13 @@ def fusionner(cellules: list, eco) -> list:
 
 
 def fusionner_questions(cellules: list, eco) -> list:
-    """Une cellule anonyme par (annee, cours, type, question, bareme)."""
+    """Une cellule anonyme par (annee, cours, type, question, bareme, passation).
+
+    La passation reste dans la cle : chacune a son corrige (CORRIGE copie)."""
     lots: dict[tuple, list] = defaultdict(list)
     for c in cellules:
         lots[tuple(c[IQ[k]] for k in ("ANNEE", "CD_COURS", "TYPE_QUEST",
-                                       "NO_QUEST", "SCORE_MAX"))].append(c)
+                                       "NO_QUEST", "SCORE_MAX", "PASSATION"))].append(c)
     sortie = []
     for lot in lots.values():
         s = [None] * len(CHAMPS_QUESTIONS)
@@ -109,6 +112,12 @@ def fusionner_questions(cellules: list, eco) -> list:
                 s[i] = lot[0][i]
             elif champ in _VIDES_Q:
                 s[i] = _VIDES_Q[champ]
+            elif champ == "DISTRIB":
+                d: dict = defaultdict(int)
+                for c in lot:
+                    for k, n in (c[i] or {}).items():
+                        d[k] += n
+                s[i] = dict(sorted(d.items())) or None
             else:
                 vals = [c[i] for c in lot if c[i] is not None]
                 s[i] = sum(vals) if vals else None

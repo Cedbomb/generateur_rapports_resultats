@@ -59,6 +59,12 @@ ANNEE_MEQ_MIN = ANNEE_DEBUT_DEFAUT  # valeur par defaut de Reglages.annee_min
 MOIS_RETENUS = (5, 6)
 
 
+# Poids reel PAR ELEVE, (final - brute) / (examen - brute) : calcule seulement
+# si l'examen s'ecarte d'au moins ce nombre de points de la note d'ecole brute.
+# En deca, l'arrondi du resultat final suffit a faire varier le poids de 0 a 100 %.
+SEUIL_ECART_POIDS = 5
+
+
 COURS_A_EPREUVE = {
     "055444": "Science et technologie, 4e secondaire",
     "063414": "Mathématique — Culture, société et technique (CST), 4e secondaire",
@@ -491,7 +497,8 @@ def aggreger_detail(conn, annee_debut: int = ANNEE_DEBUT_DEFAUT,
 
     cellules: dict[tuple, dict] = defaultdict(lambda: {
         "brut": [], "modr": [], "meq": [], "final": [], "moderation": [],
-        "triple": [], "eleves": [], "eleves_moderation": [], "ens": defaultdict(int),
+        "triple": [], "poids": [], "eleves": [], "eleves_moderation": [],
+        "ens": defaultdict(int),
         "brut_abs": [], "modr_abs": [], "final_abs": [],
     })
     sans_groupe_final = 0
@@ -544,6 +551,7 @@ def aggreger_detail(conn, annee_debut: int = ANNEE_DEBUT_DEFAUT,
             cel["eleves"].append((l.nom or CTX.libelle_sans_nom, l.note_brut, l.note_meq))
         if l.note_brut is not None and l.note_modr is not None and l.note_meq is not None:
             cel["triple"].append((l.note_brut, l.note_modr, l.note_meq))
+            cel["poids"].append((l.note_brut, l.note_modr, l.note_meq, l.note_finale))
 
     if sans_groupe_final:
         print(f"  ({sans_groupe_final} ligne(s) sans groupe même après repli, "
@@ -603,6 +611,29 @@ def aggreger_detail(conn, annee_debut: int = ANNEE_DEBUT_DEFAUT,
             n, som, somcar, hist = _serie(cel[serie + "_abs"])
             ligne.update({f"N_{prefixe}_ABS": n, f"SOM_{prefixe}_ABS": som,
                           f"SOMCAR_{prefixe}_ABS": somcar, f"HIST_{prefixe}_ABS": hist})
+        # Poids reel de l'examen : le p qui ajuste au mieux, eleve par eleve,
+        # F = B + p (E - B), soit p = somme (F-B)(E-B) / somme (E-B)^2.
+        # (M-B)(E-B) isole la part de la modération dans ce poids.
+        poids = cel["poids"]
+        # Par eleve : son poids reel en % entier, plafonne a 100 % (un final
+        # au-dela de l'examen compte comme un examen qui pese tout), et l'ecart
+        # absolu entre resultat final et note d'ecole brute.
+        n_pe, som_pe, somcar_pe, hist_pe = _serie([
+            min(100, round((f - b) / (e - b) * 100)) for b, _, e, f in poids
+            if abs(e - b) >= SEUIL_ECART_POIDS])
+        n_ef, som_ef, somcar_ef, hist_ef = _serie([round(abs(f - b), 1) for b, _, _, f in poids])
+        ligne.update({
+            "N_POIDS_ELEVE": n_pe, "SOM_POIDS_ELEVE": som_pe,
+            "SOMCAR_POIDS_ELEVE": somcar_pe, "HIST_POIDS_ELEVE": hist_pe,
+            "N_ECART_FINAL": n_ef, "SOM_ECART_FINAL": som_ef,
+            "SOMCAR_ECART_FINAL": somcar_ef, "HIST_ECART_FINAL": hist_ef,
+        })
+        ligne.update({
+            "N_POIDS": len(poids),
+            "SOM_POIDS_FB": sum((f - b) * (e - b) for b, _, e, f in poids) if poids else None,
+            "SOM_POIDS_MB": sum((m - b) * (e - b) for b, m, e, _ in poids) if poids else None,
+            "SOM_POIDS_EB2": sum((e - b) ** 2 for b, _, e, _ in poids) if poids else None,
+        })
         ligne["ENSEIGNANTS"] = (json.dumps([[i, nom, c] for (i, nom), c in ens],
                                            separators=(",", ":"), ensure_ascii=False)
                                 if ens else None)
@@ -627,6 +658,12 @@ class LigneQuestion(NamedTuple):
     type_quest: str
     no_quest: int
     score: float
+    # Passation (« AAAA-MM ») : chaque passation a son propre corrige.
+    passation: str = ""
+    # Choix multiples notes depuis une lettre : la lettre choisie ("" = vide
+    # ou invalide) et la bonne lettre. Vides pour les autres questions.
+    reponse: str = ""
+    corrige: str = ""
 
 
 def _code_cours_question(valeur) -> str:
@@ -714,13 +751,21 @@ def charger_lignes_questions(conn, annee_debut: int, annee_fin: int) -> list[Lig
         lettre = str(score or "").strip().upper()
         try:
             numero = int(float(no_quest))
-            if type_norm in TYPES_CHOIX_MULTIPLE and lettre in LETTRES_CHOIX:
-                valeur = lettre
-            else:
-                valeur = float(score)
         except (TypeError, ValueError):
             score_illisible += 1
             continue
+        if type_norm in TYPES_CHOIX_MULTIPLE and lettre in LETTRES_CHOIX:
+            valeur = lettre
+        else:
+            try:
+                valeur = float(score)
+            except (TypeError, ValueError):
+                if type_norm not in TYPES_CHOIX_MULTIPLE:
+                    score_illisible += 1
+                    continue
+                # Choix multiple vide ou invalide : compte faux (0) des qu'un
+                # corrige existe, comme a l'epreuve (noter_choix_multiples).
+                valeur = ""
 
         groupe = _normaliser_groupe(no_groupe)
         if not groupe:
@@ -736,6 +781,7 @@ def charger_lignes_questions(conn, annee_debut: int, annee_fin: int) -> list[Lig
             type_quest=type_norm,
             no_quest=numero,
             score=valeur,
+            passation=f"{annee_civile}-{mois:02d}",
         ))
 
     print(f"  Source par question : {table}")
@@ -785,7 +831,15 @@ PERM_GRAINE = 20260101
 
 
 def noter_choix_multiples(lignes: list[LigneQuestion]) -> list[LigneQuestion]:
-    """Note les lettres contre un corrige deduit des meilleurs eleves."""
+    """Note les lettres contre un corrige deduit des meilleurs eleves.
+
+    Le corrige se deduit PAR PASSATION (annee civile + mois) : chaque
+    passation a son propre corrige, et deux passations d'une meme annee
+    scolaire (mai et juin) ne doivent jamais voter ensemble.
+
+    Une reponse vide ou invalide (score "") compte fausse, comme a
+    l'epreuve, des que la question a un corrige ; elle ne vote jamais.
+    """
     lettres = [l for l in lignes if isinstance(l.score, str)]
     if not lettres:
         return lignes
@@ -793,18 +847,18 @@ def noter_choix_multiples(lignes: list[LigneQuestion]) -> list[LigneQuestion]:
 
     bareme: dict[tuple, float] = defaultdict(float)
     for l in notees:
-        cle = (l.annee, l.cd_cours, l.type_quest, l.no_quest)
+        cle = (l.passation, l.cd_cours, l.type_quest, l.no_quest)
         bareme[cle] = max(bareme[cle], l.score)
     total: dict[tuple, list] = defaultdict(lambda: [0.0, 0.0])
     for l in notees:
-        t = total[(l.annee, l.cd_cours, l.cd_permn)]
+        t = total[(l.passation, l.cd_cours, l.cd_permn)]
         t[0] += l.score
-        t[1] += bareme[(l.annee, l.cd_cours, l.type_quest, l.no_quest)]
+        t[1] += bareme[(l.passation, l.cd_cours, l.type_quest, l.no_quest)]
 
     par_epreuve: dict[tuple, list] = defaultdict(list)
-    for (annee, cours, eleve), (som, possible) in total.items():
+    for (passation, cours, eleve), (som, possible) in total.items():
         if possible:
-            par_epreuve[(annee, cours)].append((som / possible, eleve))
+            par_epreuve[(passation, cours)].append((som / possible, eleve))
     reference: dict[tuple, set] = {}
     for epreuve, eleves in par_epreuve.items():
         parfaits = {e for taux, e in eleves if taux >= 1.0}
@@ -814,26 +868,32 @@ def noter_choix_multiples(lignes: list[LigneQuestion]) -> list[LigneQuestion]:
 
     votes: dict[tuple, dict] = defaultdict(lambda: defaultdict(int))
     for l in lettres:
-        if l.cd_permn in reference.get((l.annee, l.cd_cours), ()):
-            votes[(l.annee, l.cd_cours, l.no_quest)][l.score] += 1
+        if l.score and l.cd_permn in reference.get((l.passation, l.cd_cours), ()):
+            votes[(l.passation, l.cd_cours, l.no_quest)][l.score] += 1
     corrige: dict[tuple, str] = {}
-    print("  Choix multiples — corrigé déduit des élèves à 100 % sur les autres questions :")
+    print("  Choix multiples — corrigé déduit, par passation, des élèves à 100 % "
+          "sur les autres questions :")
     for cle in sorted(votes):
         lettre, n = max(votes[cle].items(), key=lambda kv: kv[1])
         total_votes = sum(votes[cle].values())
         corrige[cle] = lettre
         accord = n / total_votes
         alerte = "   *** accord faible, à vérifier ***" if accord < ACCORD_MIN else ""
-        print(f"    {cle[0]}-{cle[0] + 1} {cle[1]} Q{cle[2]} : {lettre}  "
+        print(f"    {cle[0] or '(passation inconnue)'} {cle[1]} Q{cle[2]} : {lettre}  "
               f"({n}/{total_votes} élèves de référence, {accord:.0%}){alerte}")
 
-    sans_corrige = 0
+    sans_corrige = vides = 0
     for l in lettres:
-        bonne = corrige.get((l.annee, l.cd_cours, l.no_quest))
+        bonne = corrige.get((l.passation, l.cd_cours, l.no_quest))
         if bonne is None:
             sans_corrige += 1
             continue
-        notees.append(l._replace(score=BAREME_CHOIX_MULTIPLE if l.score == bonne else 0.0))
+        if not l.score:
+            vides += 1
+        notees.append(l._replace(score=BAREME_CHOIX_MULTIPLE if l.score == bonne else 0.0,
+                                 reponse=l.score, corrige=bonne))
+    if vides:
+        print(f"  ({vides} réponse(s) à choix multiples vide(s) ou invalide(s), comptée(s) fausse(s))")
     if sans_corrige:
         print(f"  ({sans_corrige} réponse(s) à choix multiples sans corrigé déductible, écartées)")
     return notees
@@ -855,6 +915,24 @@ def dedoublonner_questions(lignes: list[LigneQuestion]) -> list[LigneQuestion]:
     if collisions:
         print(f"  ({collisions} doublon(s) élève-question, meilleur score retenu)")
     return list(meilleure.values())
+
+
+# Distribution des reponses d'une question (infobulle de la carte de chaleur),
+# en comptes ADDITIFS d'une cellule a l'autre :
+#   - choix multiples notes depuis une lettre : la lettre, "?" si vide ;
+#   - bareme <= SEUIL_TRANCHES : chaque score tel quel (« 0 », « 2.5 », « 4 ») ;
+#   - au-dela : dix tranches de 10 % du bareme, cle = borne basse (« 0 » a
+#     « 90 », le score maximal tombant dans « 90 »).
+# Le gabarit applique la meme regle (SEUIL_TRANCHES lui est transmis).
+SEUIL_TRANCHES = 10
+
+
+def _cle_distribution(l: LigneQuestion, bareme: float) -> str:
+    if l.corrige:
+        return l.reponse or "?"
+    if bareme > SEUIL_TRANCHES:
+        return str(min(9, max(0, int(l.score / bareme * 10))) * 10)
+    return f"{l.score:g}"
 
 
 class PreparationQuestions(NamedTuple):
@@ -903,6 +981,7 @@ def preparer_questions(conn, annee_debut: int = ANNEE_DEBUT_DEFAUT,
 
     cellules: dict[tuple, dict] = defaultdict(lambda: {
         "n": 0, "som": 0.0, "somcar": 0.0, "ens": defaultdict(int),
+        "distrib": defaultdict(int), "corrige": "",
     })
     retenues: list[tuple[LigneQuestion, tuple]] = []
     sans_groupe_final = 0
@@ -924,7 +1003,7 @@ def preparer_questions(conn, annee_debut: int = ANNEE_DEBUT_DEFAUT,
         if not inclure_groupe_85 and groupe in CTX.groupes_exclus:
             continue
 
-        cle = (l.eco, l.annee, l.cd_cours, groupe, l.type_quest, l.no_quest)
+        cle = (l.eco, l.annee, l.cd_cours, groupe, l.type_quest, l.no_quest, l.passation)
         cel = cellules[cle]
         cel["src"] = groupe_src
         cel["parent"] = parent
@@ -934,13 +1013,16 @@ def preparer_questions(conn, annee_debut: int = ANNEE_DEBUT_DEFAUT,
         cel["n"] += 1
         cel["som"] += l.score
         cel["somcar"] += l.score * l.score
+        cel["distrib"][_cle_distribution(l, baremes[(l.cd_cours, l.type_quest, l.no_quest)])] += 1
+        if l.corrige:
+            cel["corrige"] = l.corrige
         retenues.append((l, cle))
 
     if sans_groupe_final:
         print(f"  ({sans_groupe_final} ligne(s) sans groupe même après repli, "
               f"regroupées sous « (sans groupe) »)")
 
-    for (eco, annee, _cours, groupe, _t, _q), cel in cellules.items():
+    for (eco, annee, _cours, groupe, _t, _q, _p), cel in cellules.items():
         du_groupe = _enseignants_directs(directs, eco, annee, cel["parent"], groupe)
         if du_groupe:
             cel["ens"] = {e: 1 for e in du_groupe}
@@ -962,7 +1044,7 @@ def aggreger_questions(conn, annee_debut: int = ANNEE_DEBUT_DEFAUT,
         return []
 
     sortie: list[dict] = []
-    for (eco, annee, cd_cours, groupe, type_quest, no_quest), cel in prep.cellules.items():
+    for (eco, annee, cd_cours, groupe, type_quest, no_quest, passation), cel in prep.cellules.items():
         sortie.append({
             "ECO": eco,
             "NOM_ECO": prep.noms_ecoles.get((eco, annee), ""),
@@ -980,10 +1062,13 @@ def aggreger_questions(conn, annee_debut: int = ANNEE_DEBUT_DEFAUT,
             "N": cel["n"],
             "SOM": cel["som"],
             "SOMCAR": cel["somcar"],
+            "PASSATION": passation,
+            "CORRIGE": cel["corrige"],
+            "DISTRIB": json.dumps(dict(sorted(cel["distrib"].items())), separators=(",", ":")),
         })
 
     sortie.sort(key=lambda l: (l["ANNEE"], l["ECO"], l["CD_COURS"],
-                               l["TYPE_QUEST"], l["NO_QUEST"], l["GROUPE"]))
+                               l["TYPE_QUEST"], l["NO_QUEST"], l["GROUPE"], l["PASSATION"]))
     print(f"  {len(sortie):,} cellule(s) (école × année × cours × groupe × question)"
           .replace(",", " "))
     return sortie
