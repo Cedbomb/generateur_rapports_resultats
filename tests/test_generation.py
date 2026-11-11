@@ -256,6 +256,33 @@ class TestRapports(Base):
         self.assertIn("const SEUIL_SANS_RISQUE = 70;", h)
         self.assertIn("% ≥ 60 et % ≥ 70", h)
         self.assertNotIn("≥ 74", h)
+        self.assertIn("const CIBLES = {};", h)
+
+
+class ReglagesIntegres(Base):
+    """Les reglages qu'utilise un rapport integre a une autre suite (CSSL)."""
+
+    def test_reglages_propres_a_un_centre(self):
+        from meq import rapport
+        with silence():
+            calculs.CTX.__init__(prefixe_organisme="999")
+            lignes = calculs.aggreger_detail(self.analyse.conn)
+        six = [m for m in rapport.MATIERES if m["cle"] not in ("ts", "ats")]
+        p = rapport.build_payloads(lignes, matieres=six)
+        self.assertEqual([m["cle"] for m in p["matieres"]], [m["cle"] for m in six])
+        h = rapport.build_html(
+            p, nom_css="CSSX", groupes_exclus=("85",), seuil_sans_risque=74,
+            cibles={"cst": 61.6}, nom_cible="PEVR", objectifs_passage={28: 85},
+            notes={"source": "SOURCE-X", "sommaire": " SOMMAIRE-X", "cibles": "<li>CIBLES-X</li>",
+                   "groupes_exclus": "LIBELLE-X"},
+            assets={"export.js": "/*EXPORT-X*/"}, version="9.9.9")
+        self.assertEqual(re.findall(r"__[A-Z_]+__", h), [])
+        for attendu in ("const SEUIL_SANS_RISQUE = 74;", "% ≥ 60 et % ≥ 74", 'const CIBLES = {"cst":61.6};',
+                        'const NOM_CIBLE = "PEVR";', 'const OBJECTIFS_PASSAGE = {"28":85};',
+                        "Source&nbsp;: SOURCE-X", "l'introduit. SOMMAIRE-X</li>", "<li>CIBLES-X</li>",
+                        "<span>LIBELLE-X</span>", "/*EXPORT-X*/", "v9.9.9", ">CSSX</option>"):
+            self.assertIn(attendu, h)
+        self.assertNotIn('"cle":"ts"', h)
 
 
 if __name__ == "__main__":

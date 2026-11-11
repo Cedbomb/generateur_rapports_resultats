@@ -140,10 +140,15 @@ def _decoder(valeur, champ):
 
 
 def build_payloads(rows: list[dict], rows_questions: list[dict] | None = None,
-                   rows_perm: list[dict] | None = None) -> dict:
-    """Charge utile du rapport, a partir des lignes de calculs.py."""
+                   rows_perm: list[dict] | None = None, matieres: list | None = None) -> dict:
+    """Charge utile du rapport, a partir des lignes de calculs.py.
+
+    matieres : sous-ensemble de MATIERES a retenir (defaut : toutes). Un cours
+    hors de cette liste est ecarte, comme un cours inconnu.
+    """
+    matieres = MATIERES if matieres is None else matieres
     codes_connus = set()
-    for m in MATIERES:
+    for m in matieres:
         codes_connus.add(m["parent"])
         codes_connus |= {c for c, _ in m["competences"]}
 
@@ -212,7 +217,7 @@ def build_payloads(rows: list[dict], rows_questions: list[dict] | None = None,
         "cellules_perm": cellules_perm,
         "ecoles": [{"id": e, "nom": n} for e, n in sorted(ecoles.items())],
         "annees": sorted(annees),
-        "matieres": MATIERES,
+        "matieres": matieres,
         "ignorees": ignorees,
         "ignorees_questions": ignorees_questions,
     }
@@ -224,24 +229,52 @@ def _esc_html(texte: str) -> str:
                  .replace(">", "&gt;").replace('"', "&quot;"))
 
 
+NOTE_SOURCE_DEFAUT = ("rapports Charlemagne du ministère, agrégés au grain école × année scolaire × "
+                      "cours × groupe.")
+
+
 def build_html(payloads: dict, questions_disponibles: bool = False,
                payloads_g85: dict | None = None, export: dict | None = None,
                nom_css: str = "Centre de services", groupes_exclus=(),
-               noms_courts: dict | None = None) -> str:
+               noms_courts: dict | None = None,
+               seuil_sans_risque: int = SEUIL_SANS_RISQUE,
+               cibles: dict | None = None, nom_cible: str = "cible",
+               objectifs_passage: dict | None = None,
+               notes: dict | None = None, assets: dict | None = None,
+               version: str = APP_VERSION) -> str:
     """Rend le rapport.
 
     payloads_g85 : variante incluant les groupes exclus.
     export : None pour le rapport du centre de services (menus complets), sinon
     {"type": "enseignant"|"ecole", "ecole", "enseignant", "titre", "g85", "absents"}.
     Il fige les menus ; la confidentialite vient des payloads, deja reduits.
+
+    Reglages propres a un centre de services (les valeurs par defaut donnent le
+    rapport de l'outil public) :
+      seuil_sans_risque : seuil de la « zone sans risque », en %.
+      cibles : {cle de matiere: % vise} sur la zone sans risque, libellee nom_cible.
+      objectifs_passage : {eco: % vise} sur la note de passage, par ecole.
+      notes : HTML des notes methodologiques — "source" (remplace la source par
+        defaut), "sommaire" (ajoute a la note Sommaire), "cibles" (un <li> de plus),
+        "groupes_exclus" (libelle de la case a cocher des groupes exclus).
+      assets : {nom de fichier: texte} remplacant styles.css, partage.css,
+        export.css ou export.js (pour un rapport integre a une autre suite).
+      version : numero affiche au pied du rapport.
     """
     payloads_g85 = payloads_g85 or payloads
-    lire = lambda nom: (ASSETS / nom).read_text(encoding="utf-8")
+    notes = notes or {}
+    assets = assets or {}
+    lire = lambda nom: assets[nom] if nom in assets else (ASSETS / nom).read_text(encoding="utf-8")
     groupes = ", ".join(sorted(groupes_exclus))
 
     html = lire("gabarit.html")
     for cle, valeur in (
         ("__NOM_CSS__", _esc_html(nom_css)),
+        ("__NOTE_SOURCE__", notes.get("source", NOTE_SOURCE_DEFAUT)),
+        ("__NOTE_SOMMAIRE__", notes.get("sommaire", "")),
+        ("__NOTE_CIBLES__", notes.get("cibles", "")),
+        ("__LIBELLE_GROUPES_EXCLUS__",
+         notes.get("groupes_exclus", f"Inclure les groupes exclus ({_esc_html(groupes)})")),
         ("__GROUPES_EXCLUS__", _esc_html(groupes)),
         ("__STYLE_GROUPES_EXCLUS__", "" if groupes else ' style="display:none"'),
         ("__NOMS_COURTS_JSON__", safe_json_for_script(noms_courts or {})),
@@ -264,13 +297,15 @@ def build_html(payloads: dict, questions_disponibles: bool = False,
         ("__MATIERES_JSON__", safe_json_for_script(payloads["matieres"])),
         ("__CHAMPS_JSON__", safe_json_for_script(CHAMPS)),
         ("__SEUIL_PASSAGE_JSON__", safe_json_for_script(SEUIL_PASSAGE)),
-        ("__SEUIL_SANS_RISQUE_JSON__", safe_json_for_script(SEUIL_SANS_RISQUE)),
-        ("__SEUIL_SANS_RISQUE__", str(SEUIL_SANS_RISQUE)),
-        ("__OBJECTIFS_PASSAGE_JSON__", "{}"),
+        ("__SEUIL_SANS_RISQUE_JSON__", safe_json_for_script(seuil_sans_risque)),
+        ("__SEUIL_SANS_RISQUE__", str(seuil_sans_risque)),
+        ("__OBJECTIFS_PASSAGE_JSON__", safe_json_for_script(objectifs_passage or {})),
+        ("__CIBLES_JSON__", safe_json_for_script(cibles or {})),
+        ("__NOM_CIBLE_JSON__", safe_json_for_script(nom_cible)),
         ("__N_MIN_JSON__", safe_json_for_script(N_MIN_AFFICHAGE)),
         ("__QUESTIONS_JSON__", safe_json_for_script(bool(questions_disponibles))),
         ("__GENERATED_AT__", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")),
-        ("__APP_VERSION__", APP_VERSION),
+        ("__APP_VERSION__", version),
     ):
         html = html.replace(cle, valeur)
     return html
