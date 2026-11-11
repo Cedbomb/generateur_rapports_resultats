@@ -284,6 +284,32 @@ class ReglagesIntegres(Base):
             self.assertIn(attendu, h)
         self.assertNotIn('"cle":"ts"', h)
 
+    def test_sources_et_population_remplacables(self):
+        appels = []
+
+        def enseignants_groupes(conn, debut, fin):
+            appels.append("groupes")
+            return {}
+
+        try:
+            with silence():
+                calculs.CTX.__init__(prefixe_organisme="999")
+                defaut = calculs.aggreger_detail(self.analyse.conn)
+                calculs.CTX.__init__(
+                    prefixe_organisme="999", cours=frozenset({"055444"}), annee_min=2100,
+                    charger_enseignants_groupes=enseignants_groupes)
+                self.assertEqual(calculs.aggreger_detail(self.analyse.conn), [])  # annee_min au-dela des donnees
+                calculs.CTX.annee_min = 2000
+                science = calculs.aggreger_detail(self.analyse.conn)
+                calculs.CTX.tables_epreuves = lambda conn: []
+                self.assertEqual(calculs.aggreger_detail(self.analyse.conn), [])
+        finally:
+            calculs.CTX.__init__()
+        self.assertTrue(science)
+        self.assertEqual({r["COURS_PARENT"] for r in science}, {"055444"})
+        self.assertGreater(len({r["COURS_PARENT"] for r in defaut}), 1)
+        self.assertIn("groupes", appels)
+
     def test_verifier_fichier_detecte_code_permanent(self):
         from meq.reduction import verifier_fichier
         self.assertEqual(verifier_fichier('<p>ABCD12345678</p>', set(), set(), set(), set()),

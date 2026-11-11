@@ -19,7 +19,7 @@ import json
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from typing import NamedTuple
+from typing import Callable, NamedTuple
 
 
 @dataclass
@@ -31,13 +31,28 @@ class Reglages:
     # {(eco, annee, cours parent, groupe): [(id enseignant, nom), ...]}
     enseignants_groupes: dict = field(default_factory=dict)
     inclure_noms: bool = False
+    # Pour une suite qui lit une autre base que celle de lecture.py (p. ex. une
+    # base de centre de services jointe a son systeme de gestion des eleves).
+    # Laisses a leur defaut, ils donnent le comportement de l'outil public.
+    annee_min: int = 2000                   # premiere annee scolaire retenue
+    cours: frozenset | None = None          # codes de cours parents retenus ; None = tous
+    libelle_sans_nom: str = "Élève"         # point du nuage d'un eleve sans nom
+    # Sources de donnees remplacables, memes signatures que les fonctions du
+    # meme nom ci-dessous : tables_epreuves(conn), table_questions_brute(conn),
+    # charger_noms_ecoles / charger_enseignants / charger_enseignants_groupes
+    # (conn, annee_debut, annee_fin).
+    tables_epreuves: Callable | None = None
+    table_questions_brute: Callable | None = None
+    charger_noms_ecoles: Callable | None = None
+    charger_enseignants: Callable | None = None
+    charger_enseignants_groupes: Callable | None = None
 
 
 CTX = Reglages()
 
 ANNEE_DEBUT_DEFAUT = 2000
 ANNEE_FIN_DEFAUT = 2100
-ANNEE_MEQ_MIN = ANNEE_DEBUT_DEFAUT
+ANNEE_MEQ_MIN = ANNEE_DEBUT_DEFAUT  # valeur par defaut de Reglages.annee_min
 
 
 
@@ -96,6 +111,12 @@ PARENT_DE_COMPETENCE = {
 
 
 SUFFIXES_COMPETENCE = ("10", "20", "30")
+
+
+def code_retenu(code: str) -> bool:
+    """Code d'un cours a epreuve (ou d'une de ses competences) retenu par CTX.cours."""
+    return code in CODES_RETENUS and (
+        CTX.cours is None or PARENT_DE_COMPETENCE.get(code, code) in CTX.cours)
 
 
 MOTIFS_DATE = (
@@ -172,11 +193,15 @@ def parse_note(valeur_brute) -> float | None:
 
 def tables_epreuves(conn) -> list[str]:
     """Table des resultats, creee par lecture.py."""
+    if CTX.tables_epreuves:
+        return CTX.tables_epreuves(conn)
     return ["MEQ"]
 
 
 def table_questions_brute(conn) -> str | None:
     """Table des reponses par question, si des fichiers par question ont ete fournis."""
+    if CTX.table_questions_brute:
+        return CTX.table_questions_brute(conn)
     return "MEQ_QUESTIONS" if conn.execute("SELECT 1 FROM MEQ_QUESTIONS LIMIT 1").fetchone() else None
 
 
@@ -187,6 +212,8 @@ class _NomsEcoles:
 
 def charger_noms_ecoles(conn, annee_debut: int, annee_fin: int) -> _NomsEcoles:
     """Noms saisis dans l'interface ; Charlemagne ne fournit que des codes."""
+    if CTX.charger_noms_ecoles:
+        return CTX.charger_noms_ecoles(conn, annee_debut, annee_fin)
     return _NomsEcoles()
 
 
@@ -236,6 +263,8 @@ def charger_enseignants(conn, annee_debut: int, annee_fin: int) -> dict:
     on reprend le groupe porte par les competences du meme eleve, sans quoi le
     Sommaire d'un enseignant serait toujours vide.
     """
+    if CTX.charger_enseignants:
+        return CTX.charger_enseignants(conn, annee_debut, annee_fin)
     votes: dict[tuple, Counter] = defaultdict(Counter)
     for cd_permn, cd_cours, dt_obten, no_groupe in conn.execute(
         "SELECT CD_PERMN, CD_COURS, DT_OBTEN_RESLT, NO_GROUP_ELEVE FROM MEQ"
@@ -251,6 +280,8 @@ def charger_enseignants(conn, annee_debut: int, annee_fin: int) -> dict:
 
 def charger_enseignants_groupes(conn, annee_debut: int, annee_fin: int) -> dict:
     """Correspondance groupe -> enseignant saisie dans l'interface."""
+    if CTX.charger_enseignants_groupes:
+        return CTX.charger_enseignants_groupes(conn, annee_debut, annee_fin)
     return CTX.enseignants_groupes
 
 
@@ -286,7 +317,7 @@ def charger_lignes_detail(conn, annee_debut: int, annee_fin: int,
              no_groupe, reslt_final, note_ecole_brut, note_ecole_modr,
              note_minst_convr) in cur.fetchall():
             code = str(cd_cours or "").strip()
-            if code not in CODES_RETENUS:
+            if not code_retenu(code):
                 hors_perimetre += 1
                 continue
 
@@ -350,7 +381,7 @@ def charger_lignes_detail(conn, annee_debut: int, annee_fin: int,
         print(f"  ({len(absences)} ligne(s) RESLT_FINAL = absence à l'épreuve, "
               f"gardées à part — voir integrer_absences())")
     if sans_groupe:
-        print(f"  ({sans_groupe} ligne(s) sans NO_GROUP_ELEVE — repli sur les autres lignes de l'élève)")
+        print(f"  ({sans_groupe} ligne(s) sans NO_GROUP_ELEVE — groupe repris d'une autre source)")
     return lignes
 
 
@@ -433,8 +464,8 @@ def aggreger_detail(conn, annee_debut: int = ANNEE_DEBUT_DEFAUT,
               "base — le rapport détaillé des épreuves sera VIDE ***")
         return []
 
-    if annee_debut < ANNEE_MEQ_MIN:
-        annee_debut = ANNEE_MEQ_MIN
+    if annee_debut < CTX.annee_min:
+        annee_debut = CTX.annee_min
     if annee_debut > annee_fin:
         print("  aucune ligne retenue (plancher épreuves MEQ au-delà de la plage demandée).")
         return []
@@ -508,9 +539,9 @@ def aggreger_detail(conn, annee_debut: int = ANNEE_DEBUT_DEFAUT,
         a_epreuve = l.note_meq is not None
         if a_epreuve and l.note_modr is not None and l.note_brut is not None:
             cel["moderation"].append(l.note_modr - l.note_brut)
-            cel["eleves_moderation"].append((l.nom or "Élève", l.note_brut, l.note_modr))
+            cel["eleves_moderation"].append((l.nom or CTX.libelle_sans_nom, l.note_brut, l.note_modr))
         if l.note_brut is not None and a_epreuve:
-            cel["eleves"].append((l.nom or "Élève", l.note_brut, l.note_meq))
+            cel["eleves"].append((l.nom or CTX.libelle_sans_nom, l.note_brut, l.note_meq))
         if l.note_brut is not None and l.note_modr is not None and l.note_meq is not None:
             cel["triple"].append((l.note_brut, l.note_modr, l.note_meq))
 
@@ -655,7 +686,7 @@ def charger_lignes_questions(conn, annee_debut: int, annee_fin: int) -> list[Lig
     for (cd_permn, cd_cours, cd_orgns, no_groupe, an_epreu, sesn_epreu,
          dt_obten, type_quest, no_quest, score) in cur.fetchall():
         code = _code_cours_question(cd_cours)
-        if code not in CODES_RETENUS:
+        if not code_retenu(code):
             hors_perimetre += 1
             continue
 
@@ -725,7 +756,7 @@ def charger_lignes_questions(conn, annee_debut: int, annee_fin: int) -> list[Lig
     if score_illisible:
         print(f"  ({score_illisible} ligne(s) Score ou NO_QUEST non numérique, écartées)")
     if sans_groupe:
-        print(f"  ({sans_groupe} ligne(s) sans NO_GROUP_ELEVE — repli sur les autres lignes de l'élève)")
+        print(f"  ({sans_groupe} ligne(s) sans NO_GROUP_ELEVE — groupe repris d'une autre source)")
     return noter_choix_multiples(lignes)
 
 
@@ -842,8 +873,8 @@ def preparer_questions(conn, annee_debut: int = ANNEE_DEBUT_DEFAUT,
         print("  Aucune table d'export par question dans cette base.")
         return None
 
-    if annee_debut < ANNEE_MEQ_MIN:
-        annee_debut = ANNEE_MEQ_MIN
+    if annee_debut < CTX.annee_min:
+        annee_debut = CTX.annee_min
     if annee_debut > annee_fin:
         print("  aucune ligne retenue (plancher épreuves MEQ au-delà de la plage demandée).")
         return None
